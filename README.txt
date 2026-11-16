@@ -1,6 +1,6 @@
 Elementum iOS Python — development port
 
-Status: 0.3.0 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
+Status: 0.3.1 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
 The original native engine's advanced feature set is not fully reproduced.
 This repository does not distribute a replacement Kodi application.
 

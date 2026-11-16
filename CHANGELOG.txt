@@ -1,3 +1,7 @@
+0.3.1
+- Preserve explicit cancellation after a pending connection closes, preventing
+  automatic source recovery from starting another torrent after Cancel.
+
 0.3.0
 - Add persistent concurrent downloads, pause/resume/cancel and offline playback.
 - Reserve disk space and a shared download memory budget; preserve restart state.

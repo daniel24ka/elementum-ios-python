@@ -210,7 +210,7 @@ class ReliabilityTests(unittest.TestCase):
             def prepare(self, timeout):
                 entered.set()
                 released.wait(5)
-                raise TorrentError('Cancelled')
+                raise TorrentError('No connected peer supplied a valid requested piece')
             def close(self):
                 self.closed = True
                 released.set()
@@ -221,8 +221,8 @@ class ReliabilityTests(unittest.TestCase):
             def prepare():
                 try:
                     runtime.prepare('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex())
-                except TorrentError:
-                    errors.append('cancelled')
+                except TorrentError as error:
+                    errors.append(str(error))
             with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])), \
                     patch('elementum_py.engine.PeerPool', WaitingPool):
                 worker = threading.Thread(target=prepare)
@@ -231,7 +231,7 @@ class ReliabilityTests(unittest.TestCase):
                 runtime.stop()
                 worker.join(timeout=1)
                 self.assertFalse(worker.is_alive())
-                self.assertEqual(errors, ['cancelled'])
+                self.assertEqual(errors, ['Cancelled'])
 
     def test_one_upload_slot_is_reserved_for_foreground_reads_and_seeks(self):
         with tempfile.TemporaryDirectory() as profile:

@@ -184,6 +184,7 @@ class TorrentEngine:
                         'selected_file': '/'.join(meta.files[file_index]['path']), 'file_index': file_index,
                         'source': 'TCP peers' if pool else 'HTTP webseed'}
             except Exception as error:
+                interrupted = cancel.is_set()
                 self.last_preparation.update(status='failed', error_type=type(error).__name__,
                     error=re.sub(r'https?://\S+', '[source]', str(error))[:250],
                     elapsed_seconds=round(time.time() - self.last_preparation['started'], 2))
@@ -198,6 +199,9 @@ class TorrentEngine:
                     stream.close()
                 self.preparing = None
                 self.preparing_pool = None
+                if interrupted:
+                    self.last_preparation.update(status='cancelled', error='Cancelled')
+                    raise TorrentError('Cancelled') from None
                 raise
 
     def stop(self):

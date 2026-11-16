@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from .catalog import plugin_url
 from .core import TorrentError
+from .version import VERSION
 
 
 class WebServer:
@@ -84,7 +85,7 @@ class WebServer:
                 elif not self.authenticated():
                     self.send({'error': 'Access token required'}, 401)
                 elif path == '/api/status':
-                    self.send({'version': '0.3.0', 'downloads': owner.backend.downloads.snapshot(),
+                    self.send({'version': VERSION, 'downloads': owner.backend.downloads.snapshot(),
                                'player': owner.backend.engine.stats(), 'foreground_required': True})
                 else:
                     self.send({'error': 'Not found'}, 404)

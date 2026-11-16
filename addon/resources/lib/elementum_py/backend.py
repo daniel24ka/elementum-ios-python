@@ -15,6 +15,7 @@ from .catalog import Catalog, CatalogError, image, list_item, media_item, plugin
 from .core import TorrentError
 from .engine import TorrentEngine
 from .downloads import Downloads
+from .version import VERSION
 from .integrations import COMPANIONS, playback_metadata, upnext_payload, upnext_notification
 
 
@@ -272,7 +273,7 @@ class Backend:
                 ('Downloads', '/downloads/', False), ('Web interface', '/web', True),
                 ('LOCALIZE[30579]', '/settings/plugin.video.elementum', True))])
         if path == '/versions':
-            return {'version': '0.3.0', 'user_agent': 'ElementumPython/0.3',
+            return {'version': VERSION, 'user_agent': 'ElementumPython/0.3',
                     'backend': 'python', 'native_engine': False}
         if path == '/diagnostics':
             return {'torrent': self.engine.stats(), 'source_search': getattr(self, 'last_search', {}),
