@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<addon id="repository.elementumios.python" name="Elementum iOS Python - Development Repository" version="0.1.0" provider-name="Elementum iOS development">
+<addon id="repository.elementumios.python" name="Elementum iOS Python - Development Repository" version="0.1.1" provider-name="Elementum iOS development">
   <requires><import addon="xbmc.addon" version="12.0.0" /></requires>
   <extension point="xbmc.addon.repository" name="Elementum iOS Python">
     <dir minversion="19.0.0">

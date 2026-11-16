@@ -10,7 +10,7 @@ https://daniel24ka.github.io/elementum-ios-python/
 Install in an existing Kodi 19+ installation:
 1. Settings > File manager > Add source: use the URL above.
 2. Add-ons > Install from zip file > choose that source.
-3. Install repository.elementumios.python-0.1.0.zip.
+3. Install repository.elementumios.python-0.1.1.zip.
 4. Install from repository > Elementum iOS Python > Video add-ons > Elementum.
 5. Install/enable Elementum Burst under Program add-ons.
 6. Open Elementum under Video add-ons.

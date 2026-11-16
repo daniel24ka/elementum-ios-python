@@ -7,9 +7,9 @@
   },
   {
     "id": "repository.elementumios.python",
-    "version": "0.1.0",
-    "bytes": 654,
-    "sha256": "56e26545b102d4e1f2e3b7dd1253273ac53eb39e385f4f1c4149a87ada532e39"
+    "version": "0.1.1",
+    "bytes": 656,
+    "sha256": "1d7b3455ea0726a296282a80e03c8a08eabcbe1331f6f17beef1bb8f58c32788"
   },
   {
     "id": "script.elementum.burst",
