@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Elementum — Downloads</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main><header><span class="mark">E</span><div><p class="eyebrow">ON YOUR DEVICE</p><h1>Elementum</h1></div><span id="connection" role="status">Connecting</span></header>
+<p class="notice">Keep Kodi open in the foreground. iOS can pause transfers when you leave the app.</p>
+<form id="auth"><label for="token">Access token from Elementum → Web interface</label><div class="row"><input id="token" type="password" autocomplete="off" required><button>Connect</button></div></form>
+<section id="dashboard" hidden><div class="summary"><div><p class="eyebrow">PLAYER</p><strong id="player">Idle</strong></div><div><p class="eyebrow">DOWNLOADS</p><strong id="count">0</strong></div></div>
+<section class="panel"><h2>Add a download</h2><form id="add"><label for="uri">Magnet link or torrent URL</label><input id="uri" type="text" required maxlength="65536" spellcheck="false"><label for="title">Title <span>(optional)</span></label><input id="title" maxlength="500"><label class="check"><input id="all" type="checkbox"> Download every file in the torrent</label><button>Add to queue</button></form></section>
+<section><div class="section-title"><h2>Your downloads</h2><button id="refresh" class="secondary">Refresh</button></div><p id="empty">No downloads yet. Add a link to save a video on this device.</p><div id="jobs"></div></section></section>
+<p id="message" role="alert"></p><footer>Verified torrent pieces · No external server · Python engine 0.3.0</footer></main></body></html>

@@ -351,14 +351,14 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
 
     combined_cancel = Cancellation()
     discovery = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=6)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=12)
     futures = {}
 
     def metadata(address):
         remaining = deadline - time.monotonic()
         if remaining <= 0 or combined_cancel.is_set():
             raise TorrentError('Cancelled')
-        return fetch_metadata(info_hash, address, trackers, min(8, remaining))
+        return fetch_metadata(info_hash, address, trackers, min(8, remaining)), address
 
     def schedule(addresses):
         candidates = list(dict.fromkeys(addresses))
@@ -366,7 +366,7 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
         for address in candidates:
             if address not in peers and len(peers) < 200:
                 peers.append(address)
-            if address not in scheduled and len(scheduled) < 80:
+            if address not in scheduled and len(scheduled) < 160:
                 scheduled.add(address)
                 futures[executor.submit(metadata, address)] = 'metadata'
 
@@ -387,9 +387,12 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
                 try:
                     result = future.result()
                     if kind == 'metadata':
+                        meta, successful_peer = result
+                        meta.metadata_peers = (successful_peer,)
                         if diagnostics is not None:
-                            diagnostics.update({'candidate_peers': len(peers), 'metadata_verified': True})
-                        return result, peers
+                            diagnostics.update({'candidate_peers': len(peers), 'metadata_verified': True,
+                                                'responsive_peer_prioritized': True})
+                        return meta, [successful_peer] + [peer for peer in peers if peer != successful_peer]
                     if kind == 'tracker':
                         result, tracker_errors = result
                         errors.update(tracker_errors)

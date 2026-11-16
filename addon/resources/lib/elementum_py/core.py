@@ -301,13 +301,14 @@ def fetch_webseed_piece(meta, base, index, timeout=15):
 class PieceStore:
     """Bound memory and share verified pieces across HTTP range requests."""
     def __init__(self, meta, peers=(), max_cache_bytes=16 * 1024 * 1024,
-                 peer_fetcher=None, cache_dir=None, allow_webseeds=True, cancel=None):
+                 peer_fetcher=None, cache_dir=None, allow_webseeds=True, cancel=None, prefetch_budget=None):
         self.meta = meta
         self.peers = tuple(peers)
         self.limit = max(1, max_cache_bytes // meta.piece_length)
         self.cache = OrderedDict()
         self.lock = threading.Lock()
         self.peer_fetcher = peer_fetcher
+        self.prefetch_budget = prefetch_budget
         self.cache_dir = cache_dir
         self.allow_webseeds = allow_webseeds
         self.cancel = cancel or threading.Event()
@@ -348,12 +349,14 @@ class PieceStore:
         try:
             errors = []
             content = None
+            from_disk = False
             if self.cache_dir:
                 filename = os.path.join(self.cache_dir, str(index) + '.piece')
                 try:
                     with open(filename, 'rb') as handle:
                         content = self.meta.verify(index, handle.read(self.meta.piece_size(index) + 1))
                     self.disk_hits += 1
+                    from_disk = True
                     self.last_source = 'Verified disk cache'
                 except (OSError, TorrentError) as error:
                     content = None
@@ -383,7 +386,7 @@ class PieceStore:
                 raise TorrentError('No usable piece source: ' + '; '.join(errors[-2:]))
             if self.cancel.is_set():
                 raise TorrentError('Cancelled')
-            if self.cache_dir:
+            if self.cache_dir and not from_disk:
                 filename = os.path.join(self.cache_dir, str(index) + '.piece')
                 temporary = filename + '.tmp'
                 with open(temporary, 'wb') as handle:
@@ -401,6 +404,9 @@ class PieceStore:
                 ready.set()
 
     def prefetch(self, indexes):
+        capacity = min(self.prefetch_workers, max(0, int(self.prefetch_budget()))) if self.prefetch_budget else self.prefetch_workers
+        if not capacity:
+            return
         with self.lock:
             if self.cancel.is_set():
                 return
@@ -409,7 +415,7 @@ class PieceStore:
             self.prefetch_futures = {index: future for index, future in self.prefetch_futures.items() if not future.done()}
             for index in indexes:
                 if (0 <= index < len(self.meta.hashes) and index not in self.cache and
-                        index not in self.prefetch_futures and len(self.prefetch_futures) < self.prefetch_workers):
+                        index not in self.prefetch_futures and len(self.prefetch_futures) < capacity):
                     self.prefetch_futures[index] = self.prefetch_executor.submit(self._prefetch, index)
 
     def _prefetch(self, index):

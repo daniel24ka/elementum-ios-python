@@ -1,0 +1,42 @@
+Elementum iOS Python 0.3.0 beta
+
+Use existing Kodi companions instead of implementing another account/token stack.
+The following projects are not bundled, modified or relicensed in this distribution.
+Users install their selected companion through Kodi's own add-on installer and
+authorize their account in that companion's settings. No companion credentials
+are read, copied, included in a ZIP, or exposed through Elementum's HTTP API.
+
+Trakt (GPL-2.0): https://github.com/razzeee/script.trakt
+Reviewed resources/lib/kodiUtilities.py, resources/lib/service.py and scrobbler.py.
+Uses the script.trakt.ids home-window property: movie IDs for a movie, SHOW IDs
+for an episode. Episode number/season are provided by the resolved video tag.
+
+SIMKL official Kodi add-on (GPL-3.0): https://github.com/SIMKL/script.simkl
+Reviewed resources/lib/player.py, auth.py and scrobbler.py, plus addon.xml.
+Uses script.simkl.ids / script.trakt.ids and tvshow.*_id resolved-item properties.
+The current official add-on owns V2 device authorization and token refresh.
+
+Up Next (GPL-2.0): https://github.com/im85288/service.upnext
+Public integration API:
+https://github.com/im85288/service.upnext/wiki/Integration
+JSONRPC.NotifyAll with sender plugin.video.elementum.SIGNAL, message upnext_data,
+and data containing base64 JSON in a one-element list. No AddonSignals library
+is needed. Up Next owns its dialog, user preferences, and next-episode action.
+
+Our adapter implements the documented interoperability contracts; no GPL
+implementation source was copied into the MIT Elementum backend. Upstream MIT
+Elementum frontend credits and license are retained in the preview package.
+
+Torrent references reviewed:
+https://github.com/JohnDoee/magnet2torrent (MIT, metadata exchange, no full player)
+https://github.com/Mys7erio/aiotorrent (MIT, educational/async TCP client)
+Neither is a ready replacement for all uTP/MSE/BitTorrent v2 requirements on
+ordinary iPhone Kodi. No torrent implementation was imported from these repos.
+
+
+Version 0.3.0 adds persistent parallel downloads, pause/resume, offline piece
+verification and saved playback, plus an optional token-protected Web dashboard.
+Trakt/SIMKL authorization and scrobbling remain owned by separately installed
+official companions. Signed-in account behavior has not been tested on iOS.
+Up Next uses its documented notification and Player.Open integration.
+Native-engine parity, uploading/seeding, uTP, MSE and BitTorrent v2 remain pending.

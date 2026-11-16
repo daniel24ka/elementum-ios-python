@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='UTF-8'?>
 <settings>
   <category label="Elementum iOS Python">
     <setting id="tmdb_api_key" type="text" label="TMDB API key (optional override)" default="" option="hidden" />
@@ -15,5 +15,5 @@
     <setting id="local_only_client" type="bool" default="false" visible="false" />
     <setting id="remote_login" type="text" default="" visible="false" />
     <setting id="remote_password" type="text" default="" visible="false" />
-  </category>
+  <setting id="source_fallback" type="bool" label="Try up to two alternative sources when startup fails" default="true" /><setting id="download_parallel" type="number" label="Concurrent saved downloads (1-3)" default="2" /><setting id="web_enabled" type="bool" label="Enable token-protected Web interface" default="true" /><setting id="web_lan" type="bool" label="Allow Web interface on local Wi-Fi (restart required)" default="false" /></category>
 </settings>

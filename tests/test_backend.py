@@ -186,6 +186,20 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result['items'][0]['info']['title'], 'Sintel')
         text = Path(self.folder.name, 'library/movie/81747.strm').read_text(encoding='utf-8')
         self.assertIn('/movie/81747/play', text)
+        resolved = self.backend.route('/movie/81747/play', {})
+        self.assertIsInstance(resolved, Redirect)
+        self.assertIn('/play?', resolved.url)
+        self.assertIn('tmdb=81747', resolved.url)
+
+    def test_episode_pack_history_keeps_separate_file_resume_positions(self):
+        uri = 'magnet:?xt=urn:btih:' + 'a' * 40
+        self.backend.state['history'] = [
+            {'uri': uri, 'file_index': 1, 'title': 'Episode one', 'position': 55, 'duration': 100, 'media': {'episode': '1'}},
+            {'uri': uri, 'file_index': 2, 'title': 'Episode two', 'position': 80, 'duration': 100, 'media': {'episode': '2'}}]
+        self.kodi.resume = lambda position: True
+        self.backend.route('/play', {'uri': uri, 'episode': '2', 'oindex': '2'})
+        self.assertEqual(self.backend.pending_resume, 80)
+        self.assertEqual(len(self.backend.state['history']), 3)  # Fake engine resolves file 0.
 
     @unittest.skipUnless(hasattr(Backend, 'announce_next_episode'), 'Development preview integration')
     def test_companion_menu_uses_official_addons(self):
@@ -245,6 +259,62 @@ class BackendTests(unittest.TestCase):
         payload, _ = catalog.search_payload('movie', 999)
         self.assertEqual(payload['titles']['en'], 'English title')
         self.assertEqual(payload['titles']['original'], 'Titre original')
+
+    def fallback_fixture(self, success='b', names=None):
+        calls = []
+        sources = [{'uri': 'magnet:?xt=urn:btih:' + letter * 40, 'name': (names or {}).get(letter, 'Source ' + letter)}
+                   for letter in 'abcd']
+        def prepare(uri, selected, title, peer_only=False):
+            calls.append((uri, selected))
+            if success and uri == sources['abcd'.index(success)]['uri']:
+                return {'url': 'http://127.0.0.1:12345/video.mp4', 'title': title, 'file_index': 0}
+            raise TorrentError('No reachable video peers')
+        self.engine.prepare = prepare
+        return sources, calls
+
+    def test_failed_source_uses_same_title_alternative_and_records_actual_history(self):
+        sources, calls = self.fallback_fixture()
+        self.backend.remember_sources('Fixture', {}, sources)
+        result = self.backend.route('/play', {'uri': sources[0]['uri'], 'query': 'Fixture', 'oindex': '7'})
+        self.assertIsInstance(result, Redirect)
+        self.assertEqual(calls, [(sources[0]['uri'], 7), (sources[1]['uri'], None)])
+        self.assertEqual(self.backend.state['history'][0]['uri'], sources[1]['uri'])
+        self.assertTrue(self.backend.last_recovery['alternative_used'])
+        self.assertNotIn('magnet:', json.dumps(self.backend.last_recovery))
+
+    def test_source_recovery_does_not_increase_selected_resolution(self):
+        sources, calls = self.fallback_fixture(success='c', names={'a': 'Film 1080p', 'b': 'Film 2160p', 'c': 'Film 720p'})
+        self.backend.remember_sources('Fixture', {}, sources)
+        self.backend.route('/play', {'uri': sources[0]['uri'], 'query': 'Fixture'})
+        self.assertEqual([item[0] for item in calls], [sources[0]['uri'], sources[2]['uri']])
+
+    def test_source_recovery_respects_cancellation_and_disable_setting(self):
+        sources, calls = self.fallback_fixture(success=None)
+        self.backend.remember_sources('Fixture', {}, sources)
+        self.kodi.setting = lambda key: 'false' if key == 'source_fallback' else ''
+        with self.assertRaises(TorrentError):
+            self.backend.route('/play', {'uri': sources[0]['uri'], 'query': 'Fixture'})
+        self.assertEqual(len(calls), 1)
+        calls.clear()
+        self.kodi.setting = lambda key: ''
+        self.kodi.abort_requested = lambda: True
+        with self.assertRaises(TorrentError):
+            self.backend.route('/play', {'uri': sources[0]['uri'], 'query': 'Fixture'})
+        self.assertEqual(len(calls), 1)
+
+    def test_source_recovery_never_uses_a_different_movie_or_episode(self):
+        sources, calls = self.fallback_fixture()
+        self.backend.remember_sources('Fixture', {'show': 1, 'season': 1, 'episode': 2}, sources)
+        with self.assertRaises(TorrentError):
+            self.backend.route('/play', {'uri': sources[0]['uri'], 'query': 'Fixture', 'show': '1', 'season': '1', 'episode': '3'})
+        self.assertEqual(len(calls), 1)
+
+    def test_source_recovery_is_limited_to_two_alternatives(self):
+        sources, calls = self.fallback_fixture(success=None)
+        self.backend.remember_sources('Fixture', {}, sources)
+        with self.assertRaises(TorrentError):
+            self.backend.route('/play', {'uri': sources[0]['uri'], 'query': 'Fixture'})
+        self.assertEqual(len(calls), 3)
 
 
 if __name__ == '__main__':

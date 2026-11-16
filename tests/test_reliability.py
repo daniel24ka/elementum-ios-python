@@ -158,7 +158,7 @@ class ReliabilityTests(unittest.TestCase):
     def test_three_real_engine_start_stream_stop_cycles(self):
         with tempfile.TemporaryDirectory() as profile:
             engine = TorrentEngine(profile, lambda key: '1' if key == 'download_storage' else '')
-            with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])):
+            with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])) as metadata:
                 for _ in range(3):
                     prepared = engine.prepare('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex(), peer_only=True)
                     with urlopen(Request(prepared['url'], headers={'Range': 'bytes=0-2047'}), timeout=5) as response:
@@ -169,6 +169,8 @@ class ReliabilityTests(unittest.TestCase):
                     self.assertEqual(engine.stats(), {'active': False})
                     with self.assertRaises(OSError):
                         urlopen(prepared['url'], timeout=1)
+                self.assertEqual(metadata.call_count, 1)
+                self.assertTrue(engine.last_metadata_diagnostics['cache_hit'])
 
     def test_stop_interrupts_pending_metadata_preparation(self):
         entered = threading.Event()
@@ -198,6 +200,66 @@ class ReliabilityTests(unittest.TestCase):
                 self.assertEqual(errors, ['cancelled'])
                 self.assertIsNone(engine.active)
                 self.assertIsNone(engine.preparing)
+
+    def test_stop_closes_pool_while_socket_preparation_is_pending(self):
+        entered, released = threading.Event(), threading.Event()
+        errors = []
+        class WaitingPool:
+            def __init__(self, *args, **kwargs):
+                self.closed = False
+            def prepare(self, timeout):
+                entered.set()
+                released.wait(5)
+                raise TorrentError('Cancelled')
+            def close(self):
+                self.closed = True
+                released.set()
+            def stats(self):
+                return {'connected_peers': 0}
+        with tempfile.TemporaryDirectory() as profile:
+            runtime = TorrentEngine(profile)
+            def prepare():
+                try:
+                    runtime.prepare('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex())
+                except TorrentError:
+                    errors.append('cancelled')
+            with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])), \
+                    patch('elementum_py.engine.PeerPool', WaitingPool):
+                worker = threading.Thread(target=prepare)
+                worker.start()
+                self.assertTrue(entered.wait(1))
+                runtime.stop()
+                worker.join(timeout=1)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(errors, ['cancelled'])
+
+    def test_one_upload_slot_is_reserved_for_foreground_reads_and_seeks(self):
+        with tempfile.TemporaryDirectory() as profile:
+            runtime = TorrentEngine(profile)
+            with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])):
+                try:
+                    runtime.prepare('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex(), peer_only=True)
+                    store = runtime.active['store']
+                    store.prefetch([3, 4, 5])
+                    self.assertFalse(store.prefetch_futures)
+                    self.assertEqual(b''.join(store.read(0, 400000, 20000)), self.fixture.payload[400000:420000])
+                finally:
+                    runtime.stop()
+
+    def test_unavailable_video_index_fails_before_player_url_is_published(self):
+        with tempfile.TemporaryDirectory() as profile:
+            runtime = TorrentEngine(profile, lambda key: 'false' if key == 'dht_enabled' else '')
+            last = len(self.fixture.meta.hashes) - 1
+            self.fixture.corrupt_piece_indices = {last}
+            try:
+                with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])):
+                    with self.assertRaises(TorrentError):
+                        runtime.prepare('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex(), peer_only=True)
+                self.assertIsNone(runtime.active)
+                self.assertEqual(runtime.last_preparation['stage'], 'video_index')
+            finally:
+                self.fixture.corrupt_piece_indices = set()
+                runtime.stop()
 
     def test_pool_replaces_eight_stale_peers_and_stops_idle_workers(self):
         import elementum_py.peers as peers
@@ -232,6 +294,19 @@ class ReliabilityTests(unittest.TestCase):
             finally:
                 pool.close()
             self.assertFalse(any(worker.is_alive() for worker in pool.connectors))
+
+    def test_verified_metadata_peer_is_not_lost_in_random_stale_endpoints(self):
+        import elementum_py.peers as peers
+        addresses = [('127.0.0.1', index) for index in range(1, 201)]
+        good = self.fixture.tcp.server_address
+        with patch.object(peers.random.SystemRandom, 'shuffle', lambda instance, items: items.reverse()):
+            pool = PeerPool(self.fixture.meta, addresses + [good], priority=[good])
+            try:
+                self.assertEqual(pool.addresses[0], good)
+                pool.prepare(timeout=2)
+                self.assertEqual(pool.fetch(0, timeout=3), self.fixture.payload[:self.fixture.piece_length])
+            finally:
+                pool.close()
 
 
 if __name__ == '__main__':

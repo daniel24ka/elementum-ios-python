@@ -36,9 +36,13 @@ class Fixture:
         self.meta = Metainfo(bencode({b'info': self.info}))
         self.connections = 0
         self.corrupt_piece = False
+        self.corrupt_piece_indices = set()
         self.corrupt_metadata = False
         self.wrong_bitfield = False
         self.unsorted_control = False
+        self.unchoke_delay = 0
+        self.choke_first_request = False
+        self.unsolicited_block = False
         self.lock = threading.Lock()
         self.servers = []
         owner = self
@@ -65,7 +69,10 @@ class Fixture:
                     if owner.unsorted_control:
                         header = b'd13:metadata_size' + bencode(len(owner.meta.info_bytes)) + b'1:md11:ut_metadatai7eee'
                     send_message(self.request, b'\x14\x00' + header)
+                    if owner.unchoke_delay:
+                        time.sleep(owner.unchoke_delay)
                     send_message(self.request, b'\x01')
+                    choked_once = False
                     incoming_metadata_id = 1
                     while True:
                         message = read_message(self.request, deadline)
@@ -86,13 +93,19 @@ class Fixture:
                             send_message(self.request, bytes((20, incoming_metadata_id)) + reply)
                         elif message[0] == 6:
                             index, offset, length = struct.unpack('!III', message[1:])
+                            late = owner.choke_first_request and not choked_once
+                            if late:
+                                send_message(self.request, b'\x00')
+                                choked_once = True
                             data = owner.payload[index * owner.piece_length + offset:index * owner.piece_length + offset + length]
-                            if owner.corrupt_piece and data:
+                            if (owner.corrupt_piece or index in owner.corrupt_piece_indices) and data:
                                 data = bytes([data[0] ^ 1]) + data[1:]
-                            reply = struct.pack('!BII', 7, index, offset) + data
+                            reply = struct.pack('!BII', 7, index, offset + (1 if owner.unsolicited_block else 0)) + data
                             frame = struct.pack('!I', len(reply)) + reply
                             self.request.sendall(frame[:6])
                             self.request.sendall(frame[6:])
+                            if late:
+                                send_message(self.request, b'\x01')
                 except (OSError, TorrentError, ValueError):
                     return
 
@@ -187,9 +200,13 @@ class ProtocolTests(unittest.TestCase):
 
     def setUp(self):
         self.fixture.corrupt_piece = False
+        self.fixture.corrupt_piece_indices = set()
         self.fixture.corrupt_metadata = False
         self.fixture.wrong_bitfield = False
         self.fixture.unsorted_control = False
+        self.fixture.unchoke_delay = 0
+        self.fixture.choke_first_request = False
+        self.fixture.unsolicited_block = False
 
     def test_magnet_hex_and_base32(self):
         digest = self.fixture.meta.info_hash
@@ -291,6 +308,8 @@ class ProtocolTests(unittest.TestCase):
         meta, peers = resolve_magnet(uri, timeout=5, allow_local=True, use_dht=False)
         self.assertEqual(meta.info_hash, self.fixture.meta.info_hash)
         self.assertIn(self.fixture.tcp.server_address, peers)
+        self.assertEqual(peers[0], self.fixture.tcp.server_address)
+        self.assertEqual(meta.metadata_peers, (self.fixture.tcp.server_address,))
 
     def test_persistent_connection_two_pieces(self):
         before = self.fixture.connections
@@ -314,8 +333,12 @@ class ProtocolTests(unittest.TestCase):
 
     def test_invalid_bitfield_rejected(self):
         self.fixture.wrong_bitfield = True
-        with self.assertRaisesRegex(TorrentError, 'bitfield'):
-            PeerSession(self.fixture.meta, self.fixture.tcp.server_address)
+        peer = PeerSession(self.fixture.meta, self.fixture.tcp.server_address)
+        try:
+            with self.assertRaisesRegex(TorrentError, 'bitfield'):
+                peer.fetch(0)
+        finally:
+            peer.close()
 
     def test_pool_streams_seek_ranges_without_webseed(self):
         pool = PeerPool(self.fixture.meta, [self.fixture.tcp.server_address])
@@ -333,6 +356,55 @@ class ProtocolTests(unittest.TestCase):
             if stream:
                 stream.close()
             pool.close()
+
+    def test_delayed_unchoke_is_not_a_failed_handshake(self):
+        self.fixture.unchoke_delay = 8.2  # Longer than the old seven-second cutoff.
+        pool = PeerPool(self.fixture.meta, [self.fixture.tcp.server_address])
+        started = time.monotonic()
+        try:
+            pool.prepare(timeout=3)
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertEqual(pool.fetch(0, timeout=12), self.fixture.payload[:32768])
+            self.assertGreaterEqual(time.monotonic() - started, 8)
+        finally:
+            pool.close()
+        self.assertFalse(any(peer.reader.is_alive() for peer in pool.sessions))
+
+    def test_requested_blocks_arriving_after_choke_remain_verified(self):
+        self.fixture.choke_first_request = True
+        peer = PeerSession(self.fixture.meta, self.fixture.tcp.server_address)
+        try:
+            self.assertEqual(peer.fetch(0, timeout=4), self.fixture.payload[:32768])
+            self.assertEqual(peer.fetch(1, timeout=4), self.fixture.payload[32768:65536])
+            self.assertFalse(peer.closed)
+        finally:
+            peer.close()
+
+    def test_truly_unsolicited_block_still_rejected(self):
+        self.fixture.unsolicited_block = True
+        peer = PeerSession(self.fixture.meta, self.fixture.tcp.server_address)
+        try:
+            with self.assertRaisesRegex(TorrentError, 'Unrequested'):
+                peer.fetch(0, timeout=4)
+        finally:
+            peer.close()
+
+    def test_new_discovery_peers_join_waiting_connector_workers(self):
+        pool = PeerPool(self.fixture.meta, [self.fixture.tcp.server_address])
+        other = Fixture()
+        # Both fixture endpoints serve identical deterministic metainfo and bytes.
+        try:
+            pool.prepare(timeout=3)
+            for peer in list(pool.sessions):
+                peer.close()
+            pool.add_peers([other.tcp.server_address])
+            self.assertEqual(pool.fetch(0, timeout=5), self.fixture.payload[:32768])
+            self.assertGreater(other.connections, 0)
+            pool.refresh(lambda: [other.tcp.server_address])
+        finally:
+            pool.close()
+            other.close()
+        self.assertFalse(pool.refresher.is_alive())
 
     def test_verified_disk_resume_and_corruption(self):
         calls = []

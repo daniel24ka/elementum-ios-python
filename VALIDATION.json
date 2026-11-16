@@ -1,0 +1,437 @@
+{
+  "version": "0.3.0",
+  "actual_packaged_backend_tested": true,
+  "status": "pass",
+  "passed": 85,
+  "skipped": 0,
+  "failures": 0,
+  "errors": 0,
+  "elapsed_seconds": 73.08,
+  "cases": [
+    {
+      "test": "test_backend.BackendTests.test_catalog_pagination",
+      "status": "pass",
+      "seconds": 0.5648
+    },
+    {
+      "test": "test_backend.BackendTests.test_companion_menu_uses_official_addons",
+      "status": "pass",
+      "seconds": 0.542
+    },
+    {
+      "test": "test_backend.BackendTests.test_concurrent_catalog_requests_share_one_fetch",
+      "status": "pass",
+      "seconds": 0.5106
+    },
+    {
+      "test": "test_backend.BackendTests.test_diagnostic_not_misidentified_as_provider",
+      "status": "pass",
+      "seconds": 0.5155
+    },
+    {
+      "test": "test_backend.BackendTests.test_episode_autoplay_resolves_a_source",
+      "status": "pass",
+      "seconds": 0.5162
+    },
+    {
+      "test": "test_backend.BackendTests.test_episode_pack_history_keeps_separate_file_resume_positions",
+      "status": "pass",
+      "seconds": 0.5067
+    },
+    {
+      "test": "test_backend.BackendTests.test_failed_source_uses_same_title_alternative_and_records_actual_history",
+      "status": "pass",
+      "seconds": 0.508
+    },
+    {
+      "test": "test_backend.BackendTests.test_library_addition_creates_playable_stream_file",
+      "status": "pass",
+      "seconds": 0.5425
+    },
+    {
+      "test": "test_backend.BackendTests.test_missing_provider_callback_is_timeout_not_no_links",
+      "status": "pass",
+      "seconds": 0.5243
+    },
+    {
+      "test": "test_backend.BackendTests.test_movie_search_object_and_info",
+      "status": "pass",
+      "seconds": 0.5274
+    },
+    {
+      "test": "test_backend.BackendTests.test_non_english_interface_keeps_an_english_provider_title",
+      "status": "pass",
+      "seconds": 0.5167
+    },
+    {
+      "test": "test_backend.BackendTests.test_original_frontend_view_contract",
+      "status": "pass",
+      "seconds": 0.521
+    },
+    {
+      "test": "test_backend.BackendTests.test_playback_redirect_and_history",
+      "status": "pass",
+      "seconds": 0.5255
+    },
+    {
+      "test": "test_backend.BackendTests.test_real_callback_burst_payload_contract",
+      "status": "pass",
+      "seconds": 0.5271
+    },
+    {
+      "test": "test_backend.BackendTests.test_search_always_closes_progress",
+      "status": "pass",
+      "seconds": 0.5281
+    },
+    {
+      "test": "test_backend.BackendTests.test_seasons_episodes_and_episode_payload",
+      "status": "pass",
+      "seconds": 0.5461
+    },
+    {
+      "test": "test_backend.BackendTests.test_source_recovery_does_not_increase_selected_resolution",
+      "status": "pass",
+      "seconds": 0.52
+    },
+    {
+      "test": "test_backend.BackendTests.test_source_recovery_is_limited_to_two_alternatives",
+      "status": "pass",
+      "seconds": 0.5104
+    },
+    {
+      "test": "test_backend.BackendTests.test_source_recovery_never_uses_a_different_movie_or_episode",
+      "status": "pass",
+      "seconds": 0.5193
+    },
+    {
+      "test": "test_backend.BackendTests.test_source_recovery_respects_cancellation_and_disable_setting",
+      "status": "pass",
+      "seconds": 0.5124
+    },
+    {
+      "test": "test_backend.BackendTests.test_unknown_callback_rejected",
+      "status": "pass",
+      "seconds": 0.5235
+    },
+    {
+      "test": "test_backend.BackendTests.test_unknown_endpoint_does_not_claim_success",
+      "status": "pass",
+      "seconds": 0.5097
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_complete_then_offline_seek_and_integrity",
+      "status": "pass",
+      "seconds": 2.5927
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_journal_restart_cancel_and_safe_removal",
+      "status": "pass",
+      "seconds": 2.5524
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_low_storage_does_not_prevent_offline_recheck",
+      "status": "pass",
+      "seconds": 2.5726
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_old_service_worker_cannot_overwrite_journal_after_restart",
+      "status": "pass",
+      "seconds": 2.5555
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_pause_resume_recovery_and_bounded_parallelism",
+      "status": "pass",
+      "seconds": 6.2123
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_recheck_detects_saved_corruption_and_resume_repairs_it",
+      "status": "pass",
+      "seconds": 2.696
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_storage_check_before_piece_transfer",
+      "status": "pass",
+      "seconds": 2.558
+    },
+    {
+      "test": "test_downloads.DownloadsTests.test_validation_secret_free_snapshot_and_metadata",
+      "status": "pass",
+      "seconds": 2.5498
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_episode_and_show_ids_never_confused",
+      "status": "pass",
+      "seconds": 0.0066
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_future_and_unknown_airdate_not_autoplayed",
+      "status": "pass",
+      "seconds": 0.0109
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_generic_magnet_not_guessed_as_movie_or_episode",
+      "status": "pass",
+      "seconds": 0.0012
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_movie_ids_match_both_existing_scrobblers",
+      "status": "pass",
+      "seconds": 0.0026
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_next_episode_same_season",
+      "status": "pass",
+      "seconds": 0.0049
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_next_episode_season_transition",
+      "status": "pass",
+      "seconds": 0.0075
+    },
+    {
+      "test": "test_integrations.IntegrationTests.test_upnext_official_notification_contract",
+      "status": "pass",
+      "seconds": 0.011
+    },
+    {
+      "test": "test_protocols.LargeFileAddressingTests.test_24_gib_torrent_real_tcp_seek_beyond_20_gib",
+      "status": "pass",
+      "seconds": 3.0791
+    },
+    {
+      "test": "test_protocols.LargePieceTests.test_eight_mib_piece_metadata_and_cross_boundary_stream",
+      "status": "pass",
+      "seconds": 0.5136
+    },
+    {
+      "test": "test_protocols.LargePieceTests.test_large_piece_prefetch_concurrency_is_bounded",
+      "status": "pass",
+      "seconds": 0.0002
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_compact_public_filter_and_ipv6",
+      "status": "pass",
+      "seconds": 0.0002
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_conflicting_magnet_hashes_rejected",
+      "status": "pass",
+      "seconds": 0.0
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_corrupt_metadata_rejected",
+      "status": "pass",
+      "seconds": 0.0008
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_corrupt_piece_closes_peer",
+      "status": "pass",
+      "seconds": 0.1037
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_delayed_unchoke_is_not_a_failed_handshake",
+      "status": "pass",
+      "seconds": 8.2101
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_dht_cancellation",
+      "status": "pass",
+      "seconds": 0.0008
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_dht_is_used_even_when_tracker_has_stale_peers",
+      "status": "pass",
+      "seconds": 0.0076
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_http_tracker_real_announce",
+      "status": "pass",
+      "seconds": 0.0027
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_inflight_piece_requests_share_one_download",
+      "status": "pass",
+      "seconds": 0.0315
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_invalid_base32_rejected",
+      "status": "pass",
+      "seconds": 0.0002
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_invalid_bitfield_rejected",
+      "status": "pass",
+      "seconds": 0.1076
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_iterative_dht_lookup_real_udp",
+      "status": "pass",
+      "seconds": 0.0015
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_magnet_end_to_end_via_tracker",
+      "status": "pass",
+      "seconds": 0.005
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_magnet_hex_and_base32",
+      "status": "pass",
+      "seconds": 0.0002
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_multiblock_metadata_exchange_real_tcp",
+      "status": "pass",
+      "seconds": 0.0029
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_multitracker_deduplication",
+      "status": "pass",
+      "seconds": 0.0024
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_new_discovery_peers_join_waiting_connector_workers",
+      "status": "pass",
+      "seconds": 2.5455
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_persistent_connection_two_pieces",
+      "status": "pass",
+      "seconds": 0.1084
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_pool_streams_seek_ranges_without_webseed",
+      "status": "pass",
+      "seconds": 0.516
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_prefetch_future_does_not_retain_piece_bytes",
+      "status": "pass",
+      "seconds": 0.0008
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_relaxed_control_decoder_still_rejects_duplicate_keys",
+      "status": "pass",
+      "seconds": 0.0001
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_requested_blocks_arriving_after_choke_remain_verified",
+      "status": "pass",
+      "seconds": 0.1058
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_truly_unsolicited_block_still_rejected",
+      "status": "pass",
+      "seconds": 0.1066
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_truncated_peer_list_rejected",
+      "status": "pass",
+      "seconds": 0.0
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_udp_tracker_ignores_wrong_transaction",
+      "status": "pass",
+      "seconds": 0.0013
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_unsorted_peer_handshake_metadata_stays_verified",
+      "status": "pass",
+      "seconds": 0.1212
+    },
+    {
+      "test": "test_protocols.ProtocolTests.test_verified_disk_resume_and_corruption",
+      "status": "pass",
+      "seconds": 0.0366
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_bad_ranges_are_416_without_fetching",
+      "status": "pass",
+      "seconds": 0.5333
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_cancelled_inflight_waiters_exit_and_do_not_cache_bytes",
+      "status": "pass",
+      "seconds": 0.1075
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_eighty_concurrent_seek_ranges_preserve_bytes_and_cache_bound",
+      "status": "pass",
+      "seconds": 1.0043
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_head_does_not_download_a_piece",
+      "status": "pass",
+      "seconds": 0.513
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_one_upload_slot_is_reserved_for_foreground_reads_and_seeks",
+      "status": "pass",
+      "seconds": 0.5281
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_pool_replaces_eight_stale_peers_and_stops_idle_workers",
+      "status": "pass",
+      "seconds": 0.0619
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_stop_closes_pool_while_socket_preparation_is_pending",
+      "status": "pass",
+      "seconds": 0.0025
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_stop_interrupts_pending_metadata_preparation",
+      "status": "pass",
+      "seconds": 0.0018
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_three_real_engine_start_stream_stop_cycles",
+      "status": "pass",
+      "seconds": 4.5827
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_unavailable_source_returns_503_before_success_headers",
+      "status": "pass",
+      "seconds": 0.5103
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_unavailable_video_index_fails_before_player_url_is_published",
+      "status": "pass",
+      "seconds": 0.0093
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_unknown_stream_token_and_non_ascii_path_are_404",
+      "status": "pass",
+      "seconds": 0.5132
+    },
+    {
+      "test": "test_reliability.ReliabilityTests.test_verified_metadata_peer_is_not_lost_in_random_stale_endpoints",
+      "status": "pass",
+      "seconds": 2.0519
+    },
+    {
+      "test": "test_repository_checksums.RepositoryChecksumTests.test_every_checksum_matches_kodi_parser_and_archive",
+      "status": "pass",
+      "seconds": 0.1536
+    },
+    {
+      "test": "test_web.WebTests.test_add_pause_remove_contract_and_protected_delete",
+      "status": "pass",
+      "seconds": 1.0158
+    },
+    {
+      "test": "test_web.WebTests.test_cross_origin_and_dns_rebinding_rejected",
+      "status": "pass",
+      "seconds": 1.0141
+    },
+    {
+      "test": "test_web.WebTests.test_dashboard_assets_csp_no_secrets_and_auth_required",
+      "status": "pass",
+      "seconds": 1.0191
+    },
+    {
+      "test": "test_web.WebTests.test_token_rotates_on_restart_and_get_cannot_mutate",
+      "status": "pass",
+      "seconds": 1.5266
+    }
+  ]
+}

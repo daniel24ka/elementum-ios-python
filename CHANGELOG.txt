@@ -1,3 +1,19 @@
+0.3.0
+- Add persistent concurrent downloads, pause/resume/cancel and offline playback.
+- Reserve disk space and a shared download memory budget; preserve restart state.
+- Add offline integrity recheck and repair by resuming from peers.
+- Add a token-protected Web dashboard; LAN access remains opt-in.
+- Integrate official Trakt/SIMKL/Up Next companions without handling credentials.
+- Preserve resolved video IDs, separate episode-pack resume and resolve movie STRM.
+- Add real-peer download, recovery, storage and Web access-control tests.
+- Prioritize the verified metadata peer when opening video connections.
+- Handle delayed unchokes and late requested blocks; retain strict hash checks.
+- Process idle control/PEX messages, refresh discovery and expose startup errors.
+- Verify video head/tail pieces before opening the player; bound startup time.
+- Recover with up to two same-title alternatives, respecting quality and cancel.
+- Cache verified metadata, prioritize foreground reads and avoid duplicate errors.
+- Native-engine parity, seeding and additional torrent transports remain pending.
+
 0.2.3
 - Accept larger torrent pieces and tolerate unordered peer control dictionaries.
 - Retain strict info-hash, piece integrity and duplicate-key validation.
@@ -11,5 +27,3 @@
 
 0.2.2
 - Fix Windows CRLF checksum sidecars that caused Kodi installation failures.
-
-Advanced companion integrations remain a separate development preview.

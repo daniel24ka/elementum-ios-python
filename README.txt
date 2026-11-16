@@ -1,6 +1,6 @@
 Elementum iOS Python — development port
 
-Status: beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
+Status: 0.3.0 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
 The original native engine's advanced feature set is not fully reproduced.
 This repository does not distribute a replacement Kodi application.
 
@@ -61,3 +61,47 @@ Sintel is the Blender Foundation's Creative Commons test film.
 
 Tests: python -m unittest discover -s tests -v
 No paid code-signing service or remote torrent server is part of this build.
+
+Version 0.3.0:
+- Persistent on-device download queue, 1-3 simultaneous jobs subject to a shared
+  memory budget, pause/resume/cancel, safe deletion and free-storage reservations.
+- Select the primary video or all torrent files from a source context menu.
+- Restarted unfinished jobs stay paused until explicitly resumed.
+- Verify saved pieces offline; resume/retry repairs corrupt or missing pieces.
+- Completed downloads play and seek from verified local pieces without discovery,
+  peer connections or webseeds. Streaming cache remains separate from saved jobs.
+- Optional Web dashboard for download management and saved playback, protected
+  by a rotating access token. Localhost by default; local Wi-Fi is opt-in.
+  Open Elementum > Web interface for the address and token. Keep the token private.
+  A browser on the same iPhone may suspend Kodi when switched to the foreground;
+  use Kodi's Downloads menu directly, or opt in to Wi-Fi for another device.
+- Optional official Trakt, SIMKL and Up Next companion integration. Account
+  authorization and scrobbling are owned by those separately installed add-ons.
+  No Trakt/SIMKL account or credential is required for Elementum itself.
+- Movie/episode IDs reach the resolved player item without confusing show IDs
+  with episode IDs. Up Next can request the next aired episode across seasons.
+- Episode-pack resume positions are separated by file; movie STRM entries now
+  resolve a source for playback. Stop/replacement clears companion properties.
+- Keep the responsive metadata peer first when opening video connections.
+- Process peer control messages while idle and wait for unchoke rotations.
+- Accept previously requested late blocks after chokes; keep strict hash checks.
+- Consume PEX peers, refresh discovery and replace unusable connections within
+  the eight-connection budget. Record safe startup phase/error diagnostics.
+- Verify both the head and tail pieces before handing a video URL to Kodi.
+  A source with an unavailable seek index fails during preparation, allowing
+  controlled recovery instead of a generic player-opening error.
+- Try at most two alternative sources for the same movie or episode when
+  startup fails. Never increase a known selected resolution; honor cancellation
+  and resolver time limits. This can be disabled in Elementum settings.
+- Cache up to four verified metadata results briefly; reserve upload slots
+  for foreground reads/seeks and interrupt pending peer preparation on cancel.
+
+Validation: 85 packaged protocol/API/stress tests, including real peer download,
+pause/restart/resume, corrupt-cache recheck and repair, offline range playback,
+storage rejection before transfer, Web auth/origin/deletion checks and recovery.
+Signed-in Trakt/SIMKL scrobbling and real-device Up Next transitions have not
+been verified. Companion settings and source availability can affect behavior.
+
+Still pending: uploading/seeding management, uTP, MSE/PE transport encryption,
+BitTorrent v2/hybrid torrents, full native-engine feature/API parity and full TV
+STRM export. This is an independent Python port, not the native Elementum engine.

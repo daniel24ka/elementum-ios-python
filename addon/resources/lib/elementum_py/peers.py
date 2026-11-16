@@ -2,6 +2,7 @@
 
 import socket
 import random
+import queue
 import struct
 import threading
 import time
@@ -23,6 +24,14 @@ class PeerSession:
         self.lock = threading.Lock()
         self.busy = threading.Lock()
         self.channel = None
+        self.reader = None
+        self.received = queue.Queue(maxsize=128)
+        self.send_lock = threading.Lock()
+        self.wake = threading.Event()
+        self.on_state = lambda: None
+        self.last_error = ''
+        self.choke_generation = 0
+        self.previous_requests = set()
         self.available = None
         self.choked = True
         self.closed = False
@@ -36,25 +45,50 @@ class PeerSession:
             self.channel = socket.create_connection(address, timeout=3)
             deadline = time.monotonic() + 7
             reserved = handshake(self.channel, meta.info_hash, deadline)
-            send_message(self.channel, b'\x05' + bytes((len(meta.hashes) + 7) // 8))
+            self._send(b'\x05' + bytes((len(meta.hashes) + 7) // 8))
             if reserved[5] & 0x10:
                 extensions = {b'ut_metadata': 1}
                 if not meta.private:
                     extensions[b'ut_pex'] = 2
-                send_message(self.channel, b'\x14\x00' + bencode({
+                self._send(b'\x14\x00' + bencode({
                     b'm': extensions, b'metadata_size': len(meta.info_bytes),
                     b'v': b'ElementumPython/0.2', b'reqq': 32}))
-            send_message(self.channel, b'\x02')
-            while self.choked:
-                self._control(read_message(self.channel, deadline))
-                self._cancelled()
+            self._send(b'\x02')
+            # A TCP handshake is not an unchoke. Real peers may wait for their
+            # 10/30-second choking rotation before granting an upload slot.
+            self.reader = threading.Thread(target=self._read, daemon=True)
+            self.reader.start()
         except Exception:
             self.close()
             raise
 
     def _cancelled(self):
         if self.closed or self.cancel.is_set():
-            raise TorrentError('Peer closed or cancelled')
+            raise TorrentError(self.last_error or 'Peer closed or cancelled')
+
+    def _send(self, payload):
+        with self.send_lock:
+            send_message(self.channel, payload)
+
+    def _read(self):
+        try:
+            while not self.closed and not self.cancel.is_set():
+                message = read_message(self.channel, time.monotonic() + 180)
+                if message and message[0] == 7:
+                    if not 9 < len(message) <= 9 + 16384:
+                        raise TorrentError('Invalid piece block length')
+                    try:
+                        self.received.put(message, timeout=1)
+                    except queue.Full:
+                        raise TorrentError('Peer exceeded the bounded block queue') from None
+                else:
+                    self._control(message)
+                    self.on_state()
+                self.wake.set()
+        except (OSError, TorrentError, ValueError) as error:
+            self.last_error = str(error)[:150]
+        finally:
+            self.close()
 
     def _control(self, message):
         if not message:
@@ -64,6 +98,8 @@ class PeerSession:
             if len(message) != 1:
                 raise TorrentError('Malformed choke state')
             self.choked = kind == 0
+            if self.choked:
+                self.choke_generation += 1
         elif kind == 4:
             if len(message) != 5:
                 raise TorrentError('Malformed HAVE message')
@@ -104,7 +140,7 @@ class PeerSession:
                         reply += self.meta.info_bytes[index * 16384:(index + 1) * 16384]
                     else:
                         reply = bencode({b'msg_type': 2, b'piece': index if type(index) is int else -1})
-                    send_message(self.channel, bytes((20, remote_id)) + reply)
+                    self._send(bytes((20, remote_id)) + reply)
             elif extension == 2 and not self.meta.private:
                 header = bdecode(message[2:], strict=False)
                 if isinstance(header, dict):
@@ -121,38 +157,51 @@ class PeerSession:
             wanted = {offset: min(16384, size - offset) for offset in range(0, size, 16384)}
             pending = {}
             blocks = {}
+            requested = set()
+            choke_generation = self.choke_generation
             started = time.monotonic()
             try:
                 while len(blocks) < len(wanted):
-                    self._cancelled()
+                    if time.monotonic() >= deadline:
+                        raise TorrentError('Peer timed out waiting for an upload slot or requested blocks')
+                    if self.cancel.is_set() or (self.closed and self.received.empty()):
+                        self._cancelled()
                     if self.available is not None and index not in self.available:
                         raise MissingPiece('Peer does not have requested piece')
-                    if not self.choked:
+                    if choke_generation != self.choke_generation:
+                        pending.clear()
+                        choke_generation = self.choke_generation
+                    if not self.choked and not self.closed:
                         for offset, length in wanted.items():
                             if len(pending) >= self.request_limit:
                                 break
                             if offset not in blocks and offset not in pending:
-                                send_message(self.channel, struct.pack('!BIII', 6, index, offset, length))
+                                self._send(struct.pack('!BIII', 6, index, offset, length))
                                 pending[offset] = length
-                    message = read_message(self.channel, deadline)
-                    if message and message[0] == 7:
-                        if len(message) < 9:
-                            raise TorrentError('Truncated piece response')
-                        piece_index, offset = struct.unpack('!II', message[1:9])
-                        if piece_index != index or offset not in pending or len(message) - 9 != pending[offset]:
-                            raise TorrentError('Unrequested piece block')
+                                requested.add(offset)
+                    try:
+                        message = self.received.get(timeout=min(0.1, max(0.01, deadline - time.monotonic())))
+                    except queue.Empty:
+                        continue
+                    piece_index, offset = struct.unpack('!II', message[1:9])
+                    if piece_index != index:
+                        if (piece_index, offset) in self.previous_requests:
+                            continue  # A previously requested block may arrive after a choke.
+                        raise TorrentError('Unrequested piece block')
+                    if offset not in requested or len(message) - 9 != wanted.get(offset):
+                        raise TorrentError('Unrequested piece block')
+                    if offset not in blocks:
                         blocks[offset] = message[9:]
-                        del pending[offset]
-                    else:
-                        was_choked = self.choked
-                        self._control(message)
-                        if not was_choked and self.choked:
-                            pending.clear()
+                    pending.pop(offset, None)
                 content = self.meta.verify(index, b''.join(blocks[offset] for offset in sorted(wanted)))
                 self.pieces += 1
                 self.bytes_received += len(content)
                 self.elapsed += max(0.001, time.monotonic() - started)
-                send_message(self.channel, struct.pack('!BI', 4, index))
+                self.previous_requests = {(index, offset) for offset in requested}
+                try:
+                    self._send(struct.pack('!BI', 4, index))
+                except OSError:
+                    pass  # Already verified bytes remain valid if the peer closes.
                 return content
             except MissingPiece:
                 raise
@@ -168,15 +217,24 @@ class PeerSession:
             except OSError:
                 pass
             self.channel.close()
+        self.wake.set()
+        self.on_state()
+        if self.reader and self.reader is not threading.current_thread():
+            self.reader.join(timeout=1)
 
 
 class PeerPool:
-    def __init__(self, meta, addresses, cancel=None):
+    def __init__(self, meta, addresses, cancel=None, priority=()):
         self.meta = meta
         self.cancel = cancel or threading.Event()
-        self.addresses = list(dict.fromkeys(addresses))[:200]
-        random.SystemRandom().shuffle(self.addresses)
-        self.addresses = self.addresses[:200]
+        preferred = [address for address in dict.fromkeys(priority) if address in addresses][:8]
+        remaining = [address for address in dict.fromkeys(addresses) if address not in preferred]
+        random.SystemRandom().shuffle(remaining)
+        # Retain the peer that just served verified metadata. Re-randomizing it
+        # among hundreds of stale endpoints can exhaust startup before trying it.
+        self.addresses = (preferred + remaining)[:200]
+        self.queued = list(self.addresses)
+        self.seen = set(self.addresses)
         self.sessions = []
         self.lock = threading.Lock()
         self.condition = threading.Condition(self.lock)
@@ -186,17 +244,21 @@ class PeerPool:
         self.closed = False
         self.errors = 0
         self.error_details = Counter()
+        self.retired_bytes = 0
+        self.refresher = None
+        self.stopping = threading.Event()
 
     def prepare(self, timeout=15):
-        queued = list(self.addresses)
+        queued = self.queued
 
         def worker():
             while not self.closed and not self.cancel.is_set():
                 with self.condition:
-                    while (queued and not self.closed and not self.cancel.is_set() and
-                           sum(not peer.closed for peer in self.sessions) + self.connecting >= 8):
+                    self._prune_closed()
+                    while ((not queued or sum(not peer.closed for peer in self.sessions) + self.connecting >= 8)
+                           and not self.closed and not self.cancel.is_set()):
                         self.condition.wait(0.5)
-                    if not queued or self.closed or self.cancel.is_set():
+                    if self.closed or self.cancel.is_set():
                         return
                     address = queued.pop(0)
                     self.connecting += 1
@@ -207,6 +269,7 @@ class PeerPool:
                             session.close()
                             return
                         self.sessions.append(session)
+                        session.on_state = self._peer_changed
                         self.ready.set()
                 except (OSError, TorrentError, ValueError) as error:
                     with self.condition:
@@ -228,18 +291,29 @@ class PeerPool:
 
     def fetch(self, index, timeout=None):
         if timeout is None:
-            timeout = min(90, max(20, 6 + self.meta.piece_size(index) / (256 * 1024)))
+            timeout = min(90, max(45, 6 + self.meta.piece_size(index) / (256 * 1024)))
         deadline = time.monotonic() + timeout
         attempted = set()
         while time.monotonic() < deadline and not self.closed and not self.cancel.is_set():
             with self.lock:
                 available = [peer for peer in self.sessions if not peer.closed and peer not in attempted]
-                available.sort(key=lambda peer: (peer.busy.locked(), -(peer.bytes_received / peer.elapsed)))
+                missing = [peer for peer in available if getattr(peer, 'available', None) is not None
+                           and index not in peer.available]
+                available = [peer for peer in available if peer not in missing]
+                available.sort(key=lambda peer: (peer.busy.locked(), getattr(peer, 'choked', False),
+                                                 -(peer.bytes_received / peer.elapsed)))
+            for peer in missing:
+                peer.close()
+                attempted.add(peer)
             if not available:
-                if not any(t.is_alive() for t in self.connectors):
-                    break
+                with self.lock:
+                    if not self.connecting and not self.queued and not any(not peer.closed for peer in self.sessions):
+                        break
                 self.cancel.wait(0.05)
                 continue
+            if all(getattr(peer, 'choked', False) for peer in available):
+                self.cancel.wait(0.05)
+                continue  # Readers keep processing all peers while upload slots rotate.
             peer = available[0]
             if not peer.busy.acquire(blocking=False):
                 self.cancel.wait(0.02)
@@ -259,19 +333,67 @@ class PeerPool:
                 peer.busy.release()
         raise TorrentError('No connected peer supplied a valid requested piece')
 
+    def _peer_changed(self):
+        with self.condition:
+            self._prune_closed()
+            for peer in self.sessions:
+                self._enqueue(getattr(peer, 'new_peers', []))
+            self.condition.notify_all()
+
+    def _prune_closed(self):
+        retained = []
+        for peer in self.sessions:
+            if peer.closed and not peer.busy.locked():
+                self.retired_bytes += peer.bytes_received
+            else:
+                retained.append(peer)
+        self.sessions = retained
+
+    def _enqueue(self, addresses):
+        if self.closed:
+            return
+        for address in addresses:
+            if address not in self.seen and len(self.seen) < 400:
+                self.seen.add(address)
+                self.queued.append(address)
+
+    def add_peers(self, addresses):
+        with self.condition:
+            self._enqueue(addresses)
+            self.condition.notify_all()
+
+    def refresh(self, discover):
+        def work():
+            delay = 1
+            while not self.stopping.wait(delay):
+                if self.closed or self.cancel.is_set():
+                    return
+                try:
+                    self.add_peers(discover())
+                except (OSError, TorrentError, ValueError):
+                    pass
+                delay = 60
+        self.refresher = threading.Thread(target=work, daemon=True)
+        self.refresher.start()
+
     def stats(self):
         with self.lock:
             return {'connected_peers': sum(not peer.closed for peer in self.sessions),
-                    'peer_bytes_received': sum(peer.bytes_received for peer in self.sessions),
+                    'unchoked_peers': sum(not peer.closed and not getattr(peer, 'choked', False) for peer in self.sessions),
+                    'queued_peers': len(self.queued),
+                    'peer_bytes_received': self.retired_bytes + sum(peer.bytes_received for peer in self.sessions),
                     'peer_errors': self.errors, 'peer_error_details': dict(self.error_details.most_common(6)),
                     'connecting_peers': self.connecting}
 
     def close(self):
         self.closed = True
+        self.stopping.set()
         with self.condition:
             sessions = list(self.sessions)
             self.condition.notify_all()
         for peer in sessions:
             peer.close()
-        for thread in self.connectors:
-            thread.join(timeout=10)
+        deadline = time.monotonic() + 10
+        for thread in self.connectors + ([self.refresher] if self.refresher else []):
+            if thread is not threading.current_thread():
+                thread.join(timeout=max(0, deadline - time.monotonic()))
