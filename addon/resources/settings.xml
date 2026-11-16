@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <category label="Elementum iOS Python">
+    <setting id="tmdb_api_key" type="text" label="TMDB API key (optional override)" default="" option="hidden" />
+    <setting id="dht_enabled" type="bool" label="Find peers using DHT" default="true" />
+    <setting id="download_storage" type="enum" label="Torrent cache" values="Disk|Memory" default="0" />
+    <setting id="buffer_timeout" type="number" label="Playback preparation timeout (seconds)" default="120" />
+    <setting id="preload_timeout" type="number" label="Service retry delay (seconds)" default="1" />
+    <setting id="default_fanart" type="bool" label="Use default fanart" default="true" />
+    <setting id="custom_provider_timeout_enabled" type="bool" label="Custom provider timeout" default="true" />
+    <setting id="custom_provider_timeout" type="number" label="Provider timeout (seconds)" default="30" />
+    <setting id="remote_host" type="text" default="127.0.0.1" visible="false" />
+    <setting id="remote_port" type="number" default="65220" visible="false" />
+    <setting id="local_port" type="number" default="65221" visible="false" />
+    <setting id="local_only_client" type="bool" default="false" visible="false" />
+    <setting id="remote_login" type="text" default="" visible="false" />
+    <setting id="remote_password" type="text" default="" visible="false" />
+  </category>
+</settings>

@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<addon id="repository.elementumios.python" name="Elementum iOS Python - Development Repository" version="0.1.0" provider-name="Elementum iOS development">
+  <requires><import addon="xbmc.addon" version="12.0.0" /></requires>
+  <extension point="xbmc.addon.repository" name="Elementum iOS Python">
+    <dir minversion="19.0.0">
+      <info compressed="false">https://daniel24ka.github.io/elementum-ios-python/repo/addons.xml</info>
+      <checksum>https://daniel24ka.github.io/elementum-ios-python/repo/addons.xml.md5</checksum>
+      <datadir zip="true">https://daniel24ka.github.io/elementum-ios-python/repo/</datadir>
+      <hashes>sha256</hashes>
+    </dir>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Development builds for ordinary iPhone Kodi</summary>
+    <description lang="en_GB">Experimental Python-backed Elementum port. Original native-engine feature parity is still under development.</description>
+    <platform>all</platform><license>MIT</license>
+  </extension>
+</addon>
