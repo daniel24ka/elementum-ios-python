@@ -80,7 +80,7 @@ class FakeEngine:
     def __init__(self):
         self.prepared = None
 
-    def stop(self):
+    def stop(self, patience=None, final=False):
         pass
 
     def stats(self):

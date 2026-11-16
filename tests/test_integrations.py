@@ -53,6 +53,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(metadata['properties']['tvshow.tvdb_id'], '20')
         self.assertEqual(metadata['info']['mediatype'], 'episode')
 
+    def test_player_item_carries_the_imdb_number_subtitle_addons_ask_for(self):
+        # Wizdom reads "imdbnumber" from the playing item. For a film it is the film's id,
+        # for an episode the show's (the service is asked with show id, season and episode).
+        movie = playback_metadata(self.catalog, {'tmdb': '30', 'type': 'movie'})
+        self.assertEqual(movie['info']['imdbnumber'], 'tt7654321')
+        episode = playback_metadata(self.catalog, {'show': '10', 'season': '1', 'episode': '2'})
+        self.assertEqual(episode['info']['imdbnumber'], 'tt1234567')
+        self.assertNotIn('imdb', episode['uniqueids'])        # The episode's own ids stay its own.
+        self.show['external_ids'] = {'tvdb_id': 20}           # A show TMDB has no IMDb id for.
+        self.catalog = Catalog(self.directory.name + '/other', transport=self.catalog.transport)
+        unknown = playback_metadata(self.catalog, {'show': '10', 'season': '1', 'episode': '2'})
+        self.assertNotIn('imdbnumber', unknown['info'])
+
     def test_next_episode_same_season(self):
         self.assertEqual(next_episode(self.catalog, 10, 1, 1, today='2025-01-01')[1]['id'], 102)
 

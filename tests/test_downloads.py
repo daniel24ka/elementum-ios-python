@@ -98,10 +98,10 @@ class DownloadsTests(unittest.TestCase):
         # Block actual peer piece transfer, then interrupt with the real engine cancellation.
         from elementum_py.peers import PeerPool
         original = PeerPool.fetch
-        def slow(pool, index):
+        def slow(pool, index, **options):
             if pool.cancel.wait(0.15):
                 raise TorrentError('Cancelled')
-            return original(pool, index)
+            return original(pool, index, **options)
         with patch.object(PeerPool, 'fetch', slow):
             identity = self.manager.add(self.uri)
             self.wait(identity, ('downloading',))

@@ -165,10 +165,13 @@ class WebServer:
             except OSError:
                 pass
         self.address = 'http://{}:{}/'.format(address, self.httpd.server_port)
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
+        try:
+            self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+            self.thread.start()
+        except BaseException:
+            self.httpd.server_close()   # Never a bound port that nobody serves.
+            raise
 
     def close(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join(timeout=3)
+        from .streaming import retire_listener
+        retire_listener(self.httpd, self.thread)   # Bounded: a stopping service has seconds.

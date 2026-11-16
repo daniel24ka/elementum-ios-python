@@ -8,28 +8,93 @@ import base64
 import concurrent.futures
 import hashlib
 import ipaddress
+import json
 import os
+import queue
 import random
 import select
 import socket
 import struct
 import time
 import threading
-from collections import Counter
+from collections import Counter, OrderedDict
 from urllib.parse import parse_qs, quote_from_bytes, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from .core import Metainfo, TorrentError, _receive, bdecode, bencode
 
 BOOTSTRAP = (('router.bittorrent.com', 6881), ('router.utorrent.com', 6881),
-             ('dht.transmissionbt.com', 6881))
+             ('dht.transmissionbt.com', 6881), ('dht.libtorrent.org', 25401),
+             ('dht.aelitis.com', 6881))
+# Each of these answered two announces of a public-domain torrent on 2026-11-16.
+# UDP first; the HTTP entries keep discovery alive on networks that block UDP.
 PUBLIC_TRACKERS = ('udp://tracker.opentrackr.org:1337/announce',
-                   'udp://open.stealth.si:80/announce')
+                   'udp://open.stealth.si:80/announce',
+                   'udp://www.torrent.eu.org:451/announce',
+                   'udp://open.demonii.com:1337/announce',
+                   'udp://tracker.qu.ax:6969/announce',
+                   'udp://open.tracker.cl:1337/announce',
+                   'udp://tracker.internetwarriors.net:1337/announce',
+                   'udp://tracker-udp.gbitt.info:80/announce',
+                   'udp://exodus.desync.com:6969/announce',
+                   'udp://retracker01-msk-virt.corbina.net:80/announce',
+                   'udp://tracker.dler.org:6969/announce',
+                   'http://tracker.opentrackr.org:1337/announce',
+                   'http://tracker.dler.org:6969/announce')
 CLIENT_PEER_ID = b'-EP0200-' + os.urandom(12)
 
 
 def peer_id():
     return CLIENT_PEER_ID
+
+
+def with_public_trackers(trackers):
+    """The source's own trackers first, then the built-in public ones."""
+    return list(dict.fromkeys(list(trackers) + list(PUBLIC_TRACKERS)))[:32]
+
+
+# Nodes that answered a recent lookup. Starting from them avoids three DNS
+# lookups and the rate limits of the public bootstrap routers on every start.
+_dht_nodes = OrderedDict()
+_dht_lock = threading.Lock()
+_dht_saved = None
+
+
+def remember_dht_node(address, node_id):
+    if not isinstance(node_id, bytes) or len(node_id) != 20:
+        return
+    with _dht_lock:
+        _dht_nodes[address] = node_id
+        _dht_nodes.move_to_end(address)
+        while len(_dht_nodes) > 64:
+            _dht_nodes.popitem(last=False)
+
+
+def load_dht_nodes(path):
+    try:
+        with open(path, encoding='utf-8') as handle:
+            rows = json.loads(handle.read(65537))
+        for row in rows[:64]:
+            host, port = validate_address(row[0], row[1])
+            remember_dht_node((host, port), bytes.fromhex(row[2]))
+    except (OSError, ValueError, TypeError, IndexError, KeyError, TorrentError):
+        pass
+
+
+def save_dht_nodes(path):
+    global _dht_saved
+    with _dht_lock:
+        rows = [[host, port, node_id.hex()] for (host, port), node_id in _dht_nodes.items()]
+    if not rows or rows == _dht_saved:
+        return
+    try:
+        temporary = path + '.tmp'
+        with open(temporary, 'w', encoding='utf-8') as handle:
+            json.dump(rows, handle, separators=(',', ':'))
+        os.replace(temporary, path)
+        _dht_saved = rows
+    except OSError:
+        pass  # A lookup cache must never prevent playback.
 
 
 def validate_address(host, port, allow_local=False):
@@ -109,7 +174,7 @@ def http_tracker(url, info_hash, identity, left=0, timeout=8, allow_local=False)
         for entry in peers[:200]:
             try:
                 result.append(validate_address(entry[b'ip'].decode('ascii'), entry[b'port'], allow_local))
-            except (KeyError, ValueError, AttributeError, TorrentError):
+            except (KeyError, ValueError, AttributeError, TypeError, TorrentError):
                 pass
     if isinstance(reply.get(b'peers6'), bytes):
         result.extend(compact_peers(reply[b'peers6'], ipv6=True, allow_local=allow_local))
@@ -120,10 +185,26 @@ def udp_tracker(url, info_hash, identity, left=0, timeout=6, allow_local=False):
     parsed = urlsplit(url)
     if parsed.scheme != 'udp' or not parsed.hostname or parsed.username:
         raise TorrentError('Invalid UDP tracker')
-    address = socket.getaddrinfo(parsed.hostname, parsed.port or 80, socket.AF_INET, socket.SOCK_DGRAM)[0][4]
+    # IPv4 first. An IPv6-only mobile network (NAT64/DNS64) has no IPv4 route,
+    # so the connect fails at once and the synthesized IPv6 address is used.
+    endpoints = sorted(socket.getaddrinfo(parsed.hostname, parsed.port or 80, 0, socket.SOCK_DGRAM),
+                       key=lambda entry: entry[0] != socket.AF_INET)
     deadline = time.monotonic() + timeout
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as channel:
-        channel.connect(address)
+    channel = None
+    for family, _, _, _, address in endpoints[:4]:
+        try:
+            candidate = socket.socket(family, socket.SOCK_DGRAM)
+        except OSError:
+            continue
+        try:
+            candidate.connect(address)
+            channel = candidate
+            break
+        except OSError:
+            candidate.close()
+    if channel is None:
+        raise TorrentError('UDP tracker is unreachable')
+    with channel:
 
         def exchange(packet, action, transaction):
             channel.send(packet)
@@ -152,56 +233,133 @@ def udp_tracker(url, info_hash, identity, left=0, timeout=6, allow_local=False):
         response = exchange(packet, 1, transaction)
         if len(response) < 20:
             raise TorrentError('Short UDP announce response')
-        return compact_peers(response[20:], allow_local=allow_local)
+        payload = response[20:]
+        if channel.family == socket.AF_INET:
+            return compact_peers(payload, allow_local=allow_local)
+        # Over IPv6 a tracker sends 18-byte IPv6 entries, or 6-byte IPv4 entries
+        # when it saw a NAT64 gateway. Reading an IPv6 list as IPv4 would invent
+        # three endpoints per peer, so the list is IPv6 only when every entry is a
+        # valid public IPv6 endpoint; a single such entry is too little to be sure.
+        entries = len(payload) // 18 if payload and len(payload) % 18 == 0 else 0
+        native = []
+        # Every address must lie in 2000::/3, the only global unicast space in use;
+        # the first octets of a list of IPv4 addresses almost never all do.
+        if entries and (allow_local or all(payload[offset] & 0xE0 == 0x20 for offset in range(0, len(payload), 18))):
+            try:
+                native = compact_peers(payload, ipv6=True, allow_local=allow_local)
+            except TorrentError:
+                native = []
+            if len(native) < len({payload[offset:offset + 18] for offset in range(0, len(payload), 18)}):
+                native = []
+        if native and entries > 1:
+            return native
+        try:
+            mapped = compact_peers(payload, allow_local=allow_local)
+        except TorrentError:
+            mapped = []
+        return list(dict.fromkeys(native + mapped))
 
 
-def tracker_peers(trackers, info_hash, left=0, timeout=10, allow_local=False, cancel=None):
+def end_executor(executor):
+    """Shut an executor down without waiting, so that every idle thread really leaves.
+
+    Idle threads wake each other by passing one sentinel along. A thread that
+    Kodi is ending by force dies without passing it on, and the others would
+    wait for ever; here each of them gets a sentinel of its own.
+    """
+    executor.shutdown(wait=False)
+    try:
+        for _ in range(len(executor._threads)):
+            executor._work_queue.put(None)
+    except Exception:
+        pass   # Another executor implementation: the plain shutdown has to do.
+
+
+def tracker_peers(trackers, info_hash, left=0, timeout=10, allow_local=False, cancel=None,
+                  enough=None, found=None):
+    """Announce to every tracker in parallel.
+
+    ``found`` receives each tracker's peers the moment it answers, and
+    ``enough`` returns early: one dead tracker no longer delays all the others.
+    """
     identity = peer_id()
     result = []
     errors = []
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
     futures = []
+    deadline = time.monotonic() + timeout
     try:
-        for url in list(dict.fromkeys(trackers))[:16]:
+        for url in list(dict.fromkeys(trackers))[:24]:
             method = udp_tracker if urlsplit(url).scheme == 'udp' else http_tracker
             futures.append(executor.submit(method, url, info_hash, identity, left, min(timeout, 6), allow_local))
-        done, _ = concurrent.futures.wait(futures, timeout=timeout)
-        for future in done:
+        pending = set(futures)
+        while pending and time.monotonic() < deadline:
+            done, pending = concurrent.futures.wait(pending, timeout=min(.25, max(0, deadline - time.monotonic())),
+                                                    return_when=concurrent.futures.FIRST_COMPLETED)
             if cancel is not None and cancel.is_set():
                 raise TorrentError('Cancelled')
-            try:
-                result.extend(future.result())
-            except (OSError, TorrentError, ValueError) as error:
-                errors.append(type(error).__name__)
+            for future in done:
+                try:
+                    peers = future.result()
+                except Exception as error:
+                    # A tracker reply is untrusted input (and plain HTTP can be altered
+                    # on the way): whatever it breaks, the other trackers still count.
+                    errors.append(type(error).__name__)
+                    continue
+                result.extend(peers)
+                if found is not None and peers:
+                    found(peers)
+            if enough and len(set(result)) >= enough:
+                break
         return list(dict.fromkeys(result))[:200], errors
     finally:
         for future in futures:
             future.cancel()
-        executor.shutdown(wait=False)
+        end_executor(executor)
 
 
-def dht_peers(info_hash, timeout=12, bootstrap=BOOTSTRAP, allow_local=False, cancel=None):
-    """Bounded iterative IPv4 KRPC get_peers lookup; not an inbound DHT node."""
+def dht_peers(info_hash, timeout=12, bootstrap=BOOTSTRAP, allow_local=False, cancel=None, found=None,
+              memory=None):
+    """Bounded iterative IPv4 KRPC get_peers lookup; not an inbound DHT node.
+
+    ``memory`` starts from nodes that answered earlier lookups and remembers the
+    ones that answer now; by default only for the real public bootstrap routers.
+    """
     node_id = os.urandom(20)
     deadline = time.monotonic() + timeout
+    target = int.from_bytes(info_hash, 'big')
     queued = []
-    for host, port in bootstrap[:6]:
-        try:
-            queued.append((0, socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_DGRAM)[0][4]))
-        except OSError:
-            continue
+    routers = list(bootstrap[:6])
+    remember = (bootstrap is BOOTSTRAP and not allow_local) if memory is None else memory
+    if remember:
+        with _dht_lock:
+            queued = [(int.from_bytes(known_id, 'big') ^ target, address)
+                      for address, known_id in _dht_nodes.items()]
+
+    def resolve_routers():
+        while routers:
+            host, port = routers.pop(0)
+            try:
+                queued.append((0, socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_DGRAM)[0][4]))
+            except OSError:
+                continue
+
+    if len(queued) < 8:
+        resolve_routers()
     seen = set()
     pending = {}
     result = []
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as channel:
         channel.setblocking(False)
-        while time.monotonic() < deadline and len(seen) < 64:
+        while time.monotonic() < deadline and len(seen) < 128:
             if cancel is not None and cancel.is_set():
                 raise TorrentError('Cancelled')
             now = time.monotonic()
             pending = {key: item for key, item in pending.items() if now - item[1] < 1.5}
+            if not queued and not pending:
+                resolve_routers()   # Remembered nodes went stale: fall back to the routers.
             queued.sort(key=lambda item: item[0])
-            while queued and len(pending) < 4:
+            while queued and len(pending) < 8:
                 _, address = queued.pop(0)
                 if address in seen:
                     continue
@@ -229,8 +387,14 @@ def dht_peers(info_hash, timeout=12, bootstrap=BOOTSTRAP, allow_local=False, can
                 response = reply.get(b'r')
                 if reply.get(b'y') != b'r' or not isinstance(response, dict):
                     continue
+                if remember:
+                    remember_dht_node(sender, response.get(b'id'))
+                fresh = []
                 for value in response.get(b'values', [])[:200]:
-                    result.extend(compact_peers(value, allow_local=allow_local))
+                    fresh.extend(compact_peers(value, allow_local=allow_local))
+                result.extend(fresh)
+                if found is not None and fresh:
+                    found(fresh)
                 nodes = response.get(b'nodes', b'')
                 if not isinstance(nodes, bytes) or len(nodes) % 26 or len(nodes) > 26 * 200:
                     continue
@@ -247,7 +411,7 @@ def dht_peers(info_hash, timeout=12, bootstrap=BOOTSTRAP, allow_local=False, can
                         queued.append((distance, address))
             except (TorrentError, ValueError, TypeError, AttributeError):
                 continue
-            if len(set(result)) >= 40:
+            if len(set(result)) >= 80:
                 break
     return list(dict.fromkeys(result))[:200]
 
@@ -263,10 +427,12 @@ def send_message(channel, payload):
     channel.sendall(struct.pack('!I', len(payload)) + payload)
 
 
-def handshake(channel, info_hash, deadline, extended=True):
+def handshake(channel, info_hash, deadline, extended=True, fast=False):
     reserved = bytearray(8)
     if extended:
         reserved[5] = 0x10
+    if fast:
+        reserved[7] |= 0x04  # BEP 6: explicit rejects, HAVE_ALL/HAVE_NONE, allowed-fast.
     packet = b'\x13BitTorrent protocol' + bytes(reserved) + info_hash + peer_id()
     channel.sendall(packet)
     response = _receive(channel, 68, deadline)
@@ -277,7 +443,7 @@ def handshake(channel, info_hash, deadline, extended=True):
 
 def fetch_metadata(info_hash, address, trackers=(), timeout=10):
     deadline = time.monotonic() + timeout
-    with socket.create_connection(address, timeout=min(4, timeout)) as channel:
+    with socket.create_connection(address, timeout=min(3, timeout)) as channel:
         reserved = handshake(channel, info_hash, deadline)
         if not reserved[5] & 0x10:
             raise TorrentError('Peer does not support metadata exchange')
@@ -289,6 +455,8 @@ def fetch_metadata(info_hash, address, trackers=(), timeout=10):
             if len(message) < 3 or message[:2] != b'\x14\x00':
                 continue
             header = bdecode(message[2:], strict=False)
+            if not isinstance(header, dict) or not isinstance(header.get(b'm', {}), dict):
+                raise TorrentError('Invalid metadata extension handshake')
             metadata_size = header.get(b'metadata_size')
             extension_id = header.get(b'm', {}).get(b'ut_metadata')
             if (type(metadata_size) is not int or not 1 <= metadata_size <= 2 * 1024 * 1024 or
@@ -334,14 +502,22 @@ def fetch_metadata(info_hash, address, trackers=(), timeout=10):
 
 
 def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=False,
-                   use_dht=True, bootstrap=BOOTSTRAP, diagnostics=None):
+                   use_dht=True, bootstrap=BOOTSTRAP, diagnostics=None, known=None):
+    """Verified metadata and candidate peers for a magnet.
+
+    ``known`` is metadata verified in an earlier session. It is returned as it
+    is, and only peers are looked for: about forty, or eight seconds.
+    """
     parsed = parse_magnet(uri)
     if cancel is not None and cancel.is_set():
         raise TorrentError('Cancelled')
     info_hash = parsed['info_hash']
-    trackers = parsed['trackers'] or list(PUBLIC_TRACKERS)
+    # A magnet does not say whether its torrent is private; DHT is already
+    # used here, so the built-in public trackers reveal nothing more.
+    trackers = with_public_trackers(parsed['trackers'])
     deadline = time.monotonic() + timeout
     peers, scheduled = [], set()
+    arrivals = queue.Queue()
     errors = Counter()
     stopped = threading.Event()
 
@@ -351,7 +527,9 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
 
     combined_cancel = Cancellation()
     discovery = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=12)
+    # Most announced addresses are stale; the first live peer answers within a
+    # second, so many are tried together instead of twelve at a time.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=32)
     futures = {}
 
     def metadata(address):
@@ -360,28 +538,43 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
             raise TorrentError('Cancelled')
         return fetch_metadata(info_hash, address, trackers, min(8, remaining)), address
 
+    if known is not None and known.info_hash != info_hash:
+        known = None
+    if known is not None:
+        known.trackers = trackers
+        deadline = time.monotonic() + min(timeout, 8)
+
     def schedule(addresses):
         candidates = list(dict.fromkeys(addresses))
         random.SystemRandom().shuffle(candidates)
         for address in candidates:
             if address not in peers and len(peers) < 200:
                 peers.append(address)
-            if address not in scheduled and len(scheduled) < 160:
+            if known is None and address not in scheduled and len(scheduled) < 160:
                 scheduled.add(address)
                 futures[executor.submit(metadata, address)] = 'metadata'
 
     try:
         schedule(explicit_peers)
+        # Peers are tried for metadata the moment one tracker or DHT node names
+        # them, not after the slowest tracker has timed out.
         futures[discovery.submit(tracker_peers, trackers, info_hash, timeout=min(8, timeout),
-                                 allow_local=allow_local, cancel=combined_cancel)] = 'tracker'
+                                 allow_local=allow_local, cancel=combined_cancel, found=arrivals.put)] = 'tracker'
         if use_dht:
             futures[discovery.submit(dht_peers, info_hash, timeout=min(12, timeout), bootstrap=bootstrap,
-                                     allow_local=allow_local, cancel=combined_cancel)] = 'dht'
+                                     allow_local=allow_local, cancel=combined_cancel, found=arrivals.put)] = 'dht'
         while futures and time.monotonic() < deadline:
             if cancel is not None and cancel.is_set():
                 raise TorrentError('Cancelled')
             done, _ = concurrent.futures.wait(futures, timeout=0.2,
                                                    return_when=concurrent.futures.FIRST_COMPLETED)
+            while True:
+                try:
+                    schedule(arrivals.get_nowait())
+                except queue.Empty:
+                    break
+            if known is not None and len(peers) >= 40:
+                break
             for future in done:
                 kind = futures.pop(future)
                 try:
@@ -397,8 +590,14 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
                         result, tracker_errors = result
                         errors.update(tracker_errors)
                     schedule(result)
-                except (OSError, TorrentError, ValueError) as error:
+                except Exception as error:
+                    # One malformed reply from a peer, tracker or DHT node is never
+                    # a reason to give up on the others.
                     errors[type(error).__name__ + ': ' + str(error)[:100]] += 1
+        if known is not None and peers:
+            if diagnostics is not None:
+                diagnostics.update({'candidate_peers': len(peers), 'metadata_verified': True, 'saved_metadata': True})
+            return known, peers
         if diagnostics is not None:
             diagnostics.update({'candidate_peers': len(peers), 'metadata_verified': False, 'errors': dict(errors)})
         if not peers:
@@ -408,5 +607,5 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
         stopped.set()
         for future in futures:
             future.cancel()
-        executor.shutdown(wait=False)
-        discovery.shutdown(wait=False)
+        end_executor(executor)
+        end_executor(discovery)

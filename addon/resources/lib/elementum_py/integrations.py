@@ -49,6 +49,11 @@ def playback_metadata(catalog, query):
         result['properties'] = {name + '_id': value for name, value in ids.items()}
     else:
         return None
+    # Subtitle add-ons such as Wizdom ask the player for "imdbnumber": the film's
+    # IMDb id, or the show's for an episode. Without it they guess from the title
+    # through a second service, and show an empty list whenever that guess fails.
+    if ids.get('imdb'):
+        result['info']['imdbnumber'] = ids['imdb']
     # Trakt's window property holds movie IDs or SHOW IDs for episodes. SIMKL
     # also accepts these properties directly on the resolved ListItem.
     encoded = json.dumps(ids, separators=(',', ':'))

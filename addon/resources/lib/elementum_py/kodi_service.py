@@ -1,5 +1,6 @@
 """Kodi service lifetime, dialogs, provider execution and playback history."""
 
+import errno
 import json
 import os
 import re
@@ -12,7 +13,7 @@ import xbmcgui
 import xbmcvfs
 
 from .backend import Backend, BackendServer
-from .playback_policy import StallGuard, kodi_cache_target
+from .playback_policy import StallGuard, kodi_cache_target, premature_end
 
 
 class Kodi:
@@ -99,12 +100,12 @@ class Kodi:
     def notify(self, text):
         xbmcgui.Dialog().notification('Elementum', text, time=5000)
 
-    def progress(self, text):
+    def progress(self, text, percent=0):
         if self.dialog is None:
             self.dialog = xbmcgui.DialogProgress()
             self.dialog.create('Elementum', text)
         else:
-            self.dialog.update(0, text)
+            self.dialog.update(max(0, min(100, int(percent))), text)
 
     def progress_close(self):
         dialog = self.dialog
@@ -181,6 +182,38 @@ class Kodi:
             'LAN access is optional in settings. The token controls downloads and playback; keep it private.')
 
 
+PORT_PATIENCE = 20.0   # Seconds of quiet retries before the user is told about a held port.
+
+
+def bind_patiently(factory, wait, patience, tell=None):
+    """Call ``factory`` until the port it binds is free.
+
+    After an update, or when the add-on is switched off and on, Kodi starts
+    this service while the previous instance may still be closing and holding
+    the port. Giving up at the first refusal left the add-on dead until Kodi
+    itself was restarted. ``wait`` is Monitor.waitForAbort; None is returned
+    when Kodi stops the service first. With ``tell`` the attempts never end:
+    the user is told once after ``patience`` seconds and the port is tried
+    again every few seconds. Without it the error is raised after ``patience``.
+    """
+    started, told = time.monotonic(), False
+    while True:
+        try:
+            return factory()
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            waited = time.monotonic() - started
+            if waited >= patience:
+                if tell is None:
+                    raise
+                if not told:
+                    told = True
+                    tell()
+        if wait(0.5 if waited < patience else 5.0):
+            return None
+
+
 def run():
     addon = xbmcaddon.Addon('plugin.video.elementum')
     monitor = xbmc.Monitor()
@@ -190,20 +223,32 @@ def run():
     server = None
     published_ids = {}
     try:
-        server = BackendServer(backend)
+        server = bind_patiently(
+            lambda: BackendServer(backend), monitor.waitForAbort, PORT_PATIENCE,
+            lambda: kodi.error('Startup', 'The previous instance still holds the local port. '
+                                          'Restart Kodi if the menus stay empty'))
+        if server is None:
+            return   # Kodi stopped the service while it was waiting for the port.
         if kodi.setting('web_enabled') == 'true':
             try:
                 from .web import WebServer
-                backend.web = WebServer(backend, lan=kodi.setting('web_lan') == 'true')
+                backend.web = bind_patiently(lambda: WebServer(backend, lan=kodi.setting('web_lan') == 'true'),
+                                             monitor.waitForAbort, 5.0)
             except OSError:
                 kodi.error('Web interface', 'The dashboard port is unavailable; Kodi menus remain available')
         xbmc.log('Elementum Python backend listening on loopback', xbmc.LOGINFO)
         class PlaybackPlayer(xbmc.Player):
             failed = False
+            ended = False
             def onPlayBackError(self):
                 self.failed = True
+            def onPlayBackEnded(self):
+                self.ended = True   # Kodi reached what it believes is the end of the file.
+            def onPlayBackStopped(self):
+                self.ended = False  # The user stopped playback; never reopen it.
             def onAVStarted(self):
                 self.failed = False
+                self.ended = False
         player = PlaybackPlayer()
         guard = StallGuard()
         recovering_url = None
@@ -215,11 +260,21 @@ def run():
         published_ids = {}
         was_playing = False
         last_save = 0
+        last_listen_check = time.monotonic()
         while not monitor.waitForAbort(0.5) and not backend.shutdown.is_set():
             if kodi.dialog and kodi.dialog.iscanceled():
                 backend.engine.stop()
                 kodi.progress_close()
             session = backend.engine.active
+            if time.monotonic() - last_listen_check >= 5:
+                # iOS may reclaim listening sockets while Kodi is suspended.
+                last_listen_check = time.monotonic()
+                try:
+                    listeners = [server] + ([session['stream']] if session and session.get('stream') else [])
+                    if any([getattr(listener, 'ensure_listening', lambda: False)() for listener in listeners]):
+                        xbmc.log('Elementum Python: reopened a local listener after suspension', xbmc.LOGINFO)
+                except Exception:
+                    pass
             if session is None:
                 kodi.clear_ids(published_ids)
                 published_ids = {}
@@ -233,16 +288,19 @@ def run():
                     if player.getPlayingFile() != url:
                         if recovering_url == url and time.monotonic() < recovery_deadline:
                             continue
-                        if was_playing and tracked_url == url:
+                        # Something else is playing. That ends this session whether it
+                        # was being watched or was waiting for a reopen that never came.
+                        if was_playing and (tracked_url == url or recovering_url == url):
                             kodi.clear_ids(published_ids)
                             published_ids = {}
                             backend.engine.stop()
-                            tracked_url, was_playing = None, False
+                            tracked_url, was_playing, recovering_url = None, False, None
                         continue
                     if tracked_url != url:
                         tracked_url = url
                         recovering_url = None
-                        last_health, last_received = time.monotonic(),0
+                        # A reopened session keeps its counters: measure from here on.
+                        last_health, last_received = time.monotonic(), session['store'].network_bytes
                         if backend.pending_resume:
                             player.seekTime(float(backend.pending_resume))
                             backend.pending_resume = 0
@@ -290,15 +348,51 @@ def run():
                         kodi.notify('Playback interrupted; switching source and keeping your position')
                         kodi.rpc('Player.Open',{'item':{'file':request}})
                         continue
+                if player.ended and premature_end(last_position,last_duration):
+                    # A starved player treats a long silence as the end of the file.
+                    # The engine session is still alive, so reopen it where it stopped.
+                    player.ended = False
+                    request = getattr(backend,'resume_request',lambda *args:None)(session,last_position)
+                    if request:
+                        recovering_url,recovery_deadline = url,time.monotonic()+150
+                        tracked_url = None
+                        kodi.notify('Playback stopped early; resuming at the same position')
+                        kodi.rpc('Player.Open',{'item':{'file':request}})
+                        continue
                 kodi.clear_ids(published_ids)
                 published_ids = {}
                 backend.engine.stop()
                 tracked_url = None
                 was_playing = False
+            elif was_playing and tracked_url is None and recovering_url == url and time.monotonic() >= recovery_deadline:
+                # The reopened session never started playing: do not keep its swarm alive.
+                kodi.clear_ids(published_ids)
+                published_ids = {}
+                backend.engine.stop()
+                recovering_url, was_playing = None, False
     except Exception as error:
         kodi.error(type(error).__name__, str(error))
     finally:
-        kodi.clear_ids(published_ids)
-        kodi.progress_close()
-        if server:
-            server.close()
+        # Kodi ends a stopping script after five seconds wherever it stands and
+        # starts the next instance at once. The port is therefore given back
+        # first. The forced end comes once per thread: if it interrupted
+        # anything here, the last block still runs to its end and frees the
+        # port and tells everything else to stop, without waiting.
+        finished = False
+        try:
+            try:
+                if server:
+                    server.release()
+                kodi.clear_ids(published_ids)
+                kodi.progress_close()
+            finally:
+                if server:
+                    server.close()
+                else:
+                    backend.close()   # The API never opened; its threads still have to end.
+            finished = True
+        finally:
+            if not finished:
+                if server:
+                    server.release()
+                backend.close(0)

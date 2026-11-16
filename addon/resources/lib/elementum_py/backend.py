@@ -12,12 +12,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .catalog import Catalog, CatalogError, image, list_item, media_item, plugin_url, view
-from .core import TorrentError
+from .core import TorrentError, run_all
 from .engine import TorrentEngine
 from .downloads import Downloads
 from .version import VERSION
 from .integrations import COMPANIONS, playback_metadata, upnext_payload, upnext_notification
 from .source_health import SourceHealth, resolution
+from .playback_policy import user_message
 
 
 class Redirect:
@@ -34,7 +35,9 @@ class Backend:
         self.base_url = 'http://127.0.0.1:' + str(port)
         self.catalog = catalog or Catalog(os.path.join(profile, 'python-catalog'),
                                           kodi.setting('tmdb_api_key'), kodi.language())
-        self.engine = engine or TorrentEngine(profile, kodi.setting, kodi.progress, kodi.choose_file)
+        self.shutdown = threading.Event()
+        self.engine = engine or TorrentEngine(profile, kodi.setting, kodi.progress, kodi.choose_file,
+                                              closing=self.shutdown)
         self.downloads = Downloads(profile, kodi.setting)
         self.web = None
         self.play_lock = threading.Lock()
@@ -46,7 +49,7 @@ class Backend:
         self.state_lock = threading.Lock()
         self.state_path = os.path.join(profile, 'python-state.json')
         self.state = {'history': [], 'searches': [], 'watched': [], 'library': []}
-        self.shutdown = threading.Event()
+        self.closing_lock = threading.Lock()
         self.last_info = {}
         self.pending_resume = 0
         self.playback_query = {}
@@ -68,6 +71,35 @@ class Backend:
             with open(temporary, 'w', encoding='utf-8') as handle:
                 json.dump(self.state, handle)
             os.replace(temporary, self.state_path)
+
+    def new_engine(self, *arguments):
+        """Replace the engine, unless the service is closing: nothing would stop a session started after that."""
+        with self.closing_lock:
+            if self.shutdown.is_set():
+                raise TorrentError('Elementum is closing; reopen it before trying again')
+            self.engine = TorrentEngine(*arguments, closing=self.shutdown)
+            return self.engine
+
+    def close(self, patience=1.5):
+        """Stop the downloads, playback and the dashboard. Safe to call again.
+
+        Kodi gives a stopping service five seconds and then ends it wherever
+        it stands. Everything is therefore told to stop, and every listening
+        socket is closed, before anything is waited for, and each step runs
+        whatever happened to the one before it. ``patience`` bounds the
+        waiting that follows; what needs longer ends on its own. A second
+        call finishes what an interrupted first one left.
+        """
+        with self.closing_lock:
+            self.shutdown.set()
+            engine = self.engine
+        deadline = time.monotonic() + patience
+        run_all((lambda: self.downloads.close(0),             # Journal saved, every download interrupted.
+                 lambda: engine.stop(0, final=True),          # Playback: peers, store, stream and its responses.
+                 lambda: self.web and self.web.close(),
+                 lambda: self.downloads.close(max(0.0, deadline - time.monotonic()))),
+                failed=lambda error: getattr(self.kodi, 'log_error', lambda *details: None)(
+                    type(error).__name__, 'A shutdown step failed'))
 
     def providers(self):
         return [addon for addon in self.kodi.addons()
@@ -329,8 +361,12 @@ class Backend:
                 raise TorrentError('Another video is being prepared; wait or cancel it first')
             try:
                 return self.play(query)
-            except (TorrentError, OSError, ValueError):
+            except (TorrentError, OSError, ValueError) as error:
                 self.last_failure = dict(getattr(self.engine, 'last_preparation', {}))
+                if isinstance(error, TorrentError):
+                    # The technical text stays in diagnostics; the viewer gets advice
+                    # for failures that are recognised, and the original text otherwise.
+                    raise TorrentError(user_message(str(error))) from None
                 raise
             finally:
                 self.play_lock.release()
@@ -379,11 +415,17 @@ class Backend:
             playback_query = {key: query[key] for key in ('show', 'season', 'episode', 'tmdb', 'type') if key in query}
             if getattr(self.engine, 'profile', self.profile) != self.profile:
                 self.engine.stop()
-                self.engine = TorrentEngine(self.profile, self.kodi.setting, self.kodi.progress, self.kodi.choose_file)
-            try:
-                prepared, uri = self.prepare_with_recovery(uri, selected, title, query)
-            finally:
-                self.kodi.progress_close()
+                self.new_engine(self.profile, self.kodi.setting, self.kodi.progress, self.kodi.choose_file)
+            prepared = None
+            if query.get('_reuse') == '1' and chain:
+                # Resume after a premature end: the session, its peers and its
+                # verified cache are still alive, so nothing is prepared again.
+                prepared = getattr(self.engine, 'reuse', lambda *args: None)(uri, selected)
+            if prepared is None:
+                try:
+                    prepared, uri = self.prepare_with_recovery(uri, selected, title, query)
+                finally:
+                    self.kodi.progress_close()
             self.last_info = metadata
             self.playback_query = playback_query
             session = self.engine.active
@@ -464,6 +506,9 @@ class Backend:
         self.last_recovery = {'attempts': [], 'alternative_used': False}
         peer_only = query.get('peer_only') == '1'
         def attempt(source, index):
+            if self.shutdown.is_set():
+                # The resume question or a catalog lookup outlasted the service.
+                raise TorrentError('Elementum is closing; reopen it before trying again')
             # Never retain tracker URLs or passkeys in the public diagnostics.
             identity = self.source_identity(source)
             safe_id = identity if re.fullmatch(r'[a-f0-9]{40}', identity) else 'torrent-url'
@@ -553,6 +598,24 @@ class Backend:
                               _recovery=chain_id,peer_only='1' if session.get('peer_only') else '0',**query)
         return None
 
+    def resume_request(self, session, position):
+        """Reopen the same source at the same position, at most twice per title."""
+        if (self.kodi.setting('playback_recovery') == 'false' or self.shutdown.is_set()
+                or self.kodi.abort_requested() or self.engine.active is not session
+                or session.get('offline') or not 15 <= position <= 86400 or not session.get('uri')):
+            return None
+        chain_id = session.get('recovery_chain')
+        chain = self.recovery_chains.get(chain_id)
+        if not chain or chain.get('resumes', 0) >= 2:
+            return None
+        chain.update(resumes=chain.get('resumes', 0) + 1, position=float(position),
+                     expected=self.source_identity(session['uri']))
+        self.last_recovery['premature_end'] = {'attempt': chain['resumes'], 'resume_seconds': round(position, 2)}
+        return plugin_url('/play', uri=session['uri'], query=session['title'], resume='0', fallback='0',
+                          oindex=session['file_index'], _recovery=chain_id, _reuse='1',
+                          peer_only='1' if session.get('peer_only') else '0',
+                          **(session.get('playback_query') or {}))
+
     def download_route(self, path, query):
         if path == '/downloads':
             jobs = self.downloads.snapshot()
@@ -591,7 +654,7 @@ class Backend:
                                  and item['file_index'] == saved['file_index']), None)
                 self.pending_resume = previous.get('position', 0) if previous and self.kodi.resume(previous.get('position', 0)) else 0
                 self.engine.stop()
-                self.engine = TorrentEngine(saved['profile'], self.kodi.setting)
+                self.new_engine(saved['profile'], self.kodi.setting)
                 prepared = self.engine.prepare_cached(saved['info_hash'], saved['file_index'], saved['title'])
                 metadata = {'info': {'title': saved['title'], 'mediatype': 'video'}}
                 try:
@@ -768,18 +831,49 @@ class BackendServer:
         class Server(ThreadingHTTPServer):
             daemon_threads = True
 
-        self.httpd = Server(('127.0.0.1', backend.port), Handler)
+        self.server_class, self.handler_class = Server, Handler
+        self.listener_lock = threading.Lock()
+        self.released = False
+        from .streaming import start_listener
+        self.httpd, self.thread = start_listener(Server, ('127.0.0.1', backend.port), Handler)
         backend.port = self.httpd.server_port
         backend.base_url = 'http://127.0.0.1:' + str(backend.port)
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
+        self.rebuilt = 0
 
-    def close(self):
+    def ensure_listening(self):
+        """Reopen the local API on its port if a suspended iOS app lost the listener."""
+        from .streaming import listener_alive, retire_listener, start_listener
+        with self.listener_lock:
+            if self.released or self.backend.shutdown.is_set() or listener_alive(self.backend.port):
+                return False
+            retire_listener(self.httpd, self.thread)
+            self.httpd = None
+            try:
+                self.httpd, self.thread = start_listener(self.server_class, ('127.0.0.1', self.backend.port),
+                                                         self.handler_class)
+            except (OSError, RuntimeError):
+                return False   # The port or a thread is not to be had yet; the next check tries again.
+            self.rebuilt += 1
+            return True
+
+    def release(self):
+        """Give the API port back; safe to call again.
+
+        After an update, or when the add-on is switched off and on, Kodi starts
+        the next instance of this service while this one is still closing, and
+        it ends a script that takes longer than five seconds wherever it
+        stands. A port that is freed last, or never, leaves the new instance
+        unable to start, so it is freed first.
+        """
+        from .streaming import retire_listener
+        with self.listener_lock:
+            self.released = True
+            httpd, thread = self.httpd, self.thread
+        retire_listener(httpd, thread)
+
+    def close(self, patience=1.5):
         self.backend.shutdown.set()
-        if self.backend.web:
-            self.backend.web.close()
-        self.backend.downloads.close()
-        self.backend.engine.stop()
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join(timeout=3)
+        try:
+            self.release()
+        finally:
+            self.backend.close(patience)

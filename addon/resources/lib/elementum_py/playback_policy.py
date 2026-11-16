@@ -44,9 +44,76 @@ class StallGuard:
             return True
         return False
 
+def premature_end(position, duration):
+    """True when playback "ended" well before the end: starvation, not the credits."""
+    return bool(duration and position >= 15 and duration - position > max(60, duration * .03))
+
 def kodi_cache_target(free_mib, current_mib):
     # Zero explicitly means a full-file disk cache; never replace that choice.
     if current_mib == 0:
         return current_mib
     target = 64 if free_mib >= 512 else 32 if free_mib >= 256 else 20
     return max(current_mib, target)
+
+def prebuffer_target(file_length, cache_bytes, piece_length, wanted=8 * MIB, bitrate=0):
+    """Verified bytes to hold at the file start before the player is given the URL.
+
+    About eight seconds of this video when its bitrate is known, never more than
+    the configured size or a quarter of the engine cache, and never a second
+    copy of a very large piece: the first piece is already verified by now.
+    """
+    if wanted <= 0:
+        return 0
+    target = min(wanted, cache_bytes // 4, file_length)
+    if bitrate > 0:
+        target = min(target, max(MIB, int(bitrate * 8)))
+    return 0 if target <= piece_length else target
+
+def prebuffer_done(ahead, target, rate=0, bitrate=0, waited=0):
+    """Stop buffering early when the swarm is clearly faster than the video."""
+    if ahead >= target:
+        return True
+    return bool(bitrate > 0 and waited >= 1 and rate >= bitrate * 1.5 and ahead >= bitrate * 2)
+
+FAILURES = (
+    ('cancelled', ('cancel',)),
+    ('no_video', ('no video files', 'file selection', 'invalid selected')),
+    ('integrity', ('sha-1', 'verification failed', 'info-hash')),
+    ('no_peers', ('no torrent peers found', 'no usable torrent peers')),
+    ('metadata', ('none supplied usable torrent metadata',)),
+    ('peers_unreachable', ('no usable tcp peers', 'no connected peer supplied')),
+    ('peers_busy', ('upload slot',)),
+    ('missing_pieces', ('has this part',)),
+    ('timeout', ('did not buffer in time', 'timed out')),
+)
+
+def classify_failure(message, stage=''):
+    """A stable reason code for diagnostics.
+
+    The stage only labels an otherwise unknown failure in diagnostics; it never
+    selects the advice shown to the viewer (see user_message).
+    """
+    text = str(message or '').lower()
+    for code, needles in FAILURES:
+        if any(needle in text for needle in needles):
+            return code
+    return 'metadata' if stage == 'metadata' else 'unknown'
+
+ADVICE = {
+    'no_peers': 'No peers were found for this source. Try another source.',
+    'metadata': 'Peers were found but none sent the torrent details. Try another source.',
+    'peers_unreachable': 'Peers were found but none accepted a connection. Try another source.',
+    'peers_busy': 'Peers are connected but busy; none granted an upload slot in time. Try another source.',
+    'missing_pieces': 'The connected peers do not have this part of the video yet. Try another source.',
+    'timeout': 'This source is too slow to buffer in time. Try another source.',
+    'integrity': 'This source sent data that failed verification. Try another source.',
+    'no_video': 'This torrent has no playable video file.',
+}
+
+def user_message(message):
+    """Plain advice for a recognised failure; the original text for anything else.
+
+    Input errors ("Use an HTTP(S) torrent URL or a magnet link") are raised
+    before any peer is contacted and must reach the viewer unchanged.
+    """
+    return ADVICE.get(classify_failure(message)) or str(message)
