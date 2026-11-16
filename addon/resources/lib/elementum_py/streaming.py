@@ -20,34 +20,70 @@ TYPES = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mkv': 'video/x-matroska',
 RESERVE = 64 * 1024
 DRIP = 256
 HEARTBEAT = 1.0
+WRITE_STEP = 1.0   # Seconds a response waits for the player before it looks whether it was dropped.
 
 
 def retire_listener(httpd, thread):
-    """Stop an accept loop whose socket the system took away, then free the socket.
+    """Stop an accept loop, then free its socket. Never raises.
 
     Closing the socket alone would leave serve_forever() polling a dead
     descriptor, which spins at full speed on platforms that use poll().
+    shutdown() waits for the loop to answer, so it is asked only while the
+    loop's thread runs: one that never started would never answer, and one
+    that has ended needs nothing.
     """
     if httpd is None:
         return
-    stopper = threading.Thread(target=httpd.shutdown, daemon=True)
-    stopper.start()
-    stopper.join(timeout=2)
+    running = thread is not None and thread.is_alive()
     try:
-        httpd.server_close()
-    except OSError:
-        pass
-    if thread is not None and thread is not threading.current_thread():
+        if running:
+            # What shutdown() does, without its unbounded wait and without a
+            # helper thread, which may not be available when threads are short.
+            httpd._BaseServer__shutdown_request = True
+            if thread is not threading.current_thread():
+                httpd._BaseServer__is_shut_down.wait(2)
+    except AttributeError:
+        pass   # Not a socketserver loop; its socket is all that can be freed.
+    finally:
+        try:
+            httpd.server_close()
+        except OSError:
+            pass
+    if running and thread is not threading.current_thread():
         thread.join(timeout=1)
 
 
-def listener_alive(port):
-    """True when a loopback listener still accepts connections."""
+def start_listener(server_class, address, handler_class):
+    """A bound listener whose accept loop runs, or an exception and nothing left behind.
+
+    A port that is bound while nobody serves it looks alive to every check
+    and answers no request.
+    """
+    httpd = server_class(address, handler_class)
     try:
-        socket.create_connection(('127.0.0.1', port), timeout=1).close()
-        return True
-    except OSError:
-        return False
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+    except BaseException:
+        httpd.server_close()
+        raise
+    return httpd, thread
+
+
+def listener_alive(port):
+    """True when a loopback listener still accepts connections.
+
+    A refused connection is certain. A timeout is not, because a busy phone can
+    delay one accept; it gets a second try before a healthy listener is replaced.
+    """
+    for _ in range(2):
+        try:
+            socket.create_connection(('127.0.0.1', port), timeout=1).close()
+            return True
+        except ConnectionRefusedError:
+            return False
+        except OSError:
+            pass
+    return False
 
 
 def stream_mime(url):
@@ -81,8 +117,11 @@ def parse_range(value, size):
 
 
 class StreamServer:
-    def __init__(self, store, file_index, heartbeat=HEARTBEAT, reserve=RESERVE, drip=DRIP):
+    def __init__(self, store, file_index, heartbeat=HEARTBEAT, reserve=RESERVE, drip=DRIP, closing=None):
         self.store = store
+        # Set when the whole service stops. It also reaches the responses of a
+        # stream that an ordinary stop closed earlier and nobody refers to any more.
+        self.closing = closing or threading.Event()
         self.file_index = file_index
         self.heartbeat, self.reserve, self.drip = heartbeat, reserve, drip
         self.token = secrets.token_hex(24)
@@ -150,6 +189,7 @@ class StreamServer:
                 if send_body:
                     owner.count('open_responses')
                     try:
+                        self.connection.settimeout(WRITE_STEP)
                         # Hand the first chunk over without keeping a reference here:
                         # this frame lives as long as the response, the piece must not.
                         holder, first = [first], None
@@ -165,7 +205,18 @@ class StreamServer:
                         owner.count('open_responses', -1)
 
             def write(self, data):
-                self.wfile.write(data)
+                # A player that is paused, or that parked this connection during a
+                # seek, reads nothing, and sendall() would wait for it without end.
+                # Kodi waits for every thread of a stopped service, so the wait is
+                # taken in steps and ends when the service drops its streams.
+                view = memoryview(data)
+                while len(view):
+                    if owner.dropped or owner.closing.is_set():
+                        raise OSError('The stream was closed')
+                    try:
+                        view = view[self.connection.send(view):]
+                    except socket.timeout:
+                        pass
                 owner.count('delivered_bytes', len(data))
 
             def deliver(self, parts, holder):
@@ -209,12 +260,13 @@ class StreamServer:
             allow_reuse_address = True
 
         self.server_class, self.handler_class = Server, Handler
-        self.httpd = Server(('127.0.0.1', 0), Handler)
+        self.listener_lock = threading.Lock()
+        self.closed = False
+        self.dropped = False
+        self.httpd, self.thread = start_listener(Server, ('127.0.0.1', 0), Handler)
         self.port = self.httpd.server_port
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
         self.rebuilt = 0
-        self.url = 'http://127.0.0.1:{}/{}/video{}'.format(self.httpd.server_port, self.token, self.extension)
+        self.url = 'http://127.0.0.1:{}/{}/video{}'.format(self.port, self.token, self.extension)
 
     def ensure_listening(self):
         """Reopen the listener on the same port if the system took it away.
@@ -223,18 +275,20 @@ class StreamServer:
         back by itself when Kodi returns to the foreground, and the stream URL
         the player holds would then refuse every reconnect.
         """
-        if listener_alive(self.port):
-            return False
-        retire_listener(self.httpd, self.thread)
-        try:
-            self.httpd = self.server_class(('127.0.0.1', self.port), self.handler_class)
-        except OSError:
-            self.httpd = None   # The port is not free yet; the next check tries again.
-            return False
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
-        self.rebuilt += 1
-        return True
+        with self.listener_lock:
+            # A session that ended in the meantime stays closed: nothing would
+            # ever close a listener that was reopened for it.
+            if self.closed or listener_alive(self.port):
+                return False
+            retire_listener(self.httpd, self.thread)
+            self.httpd = None
+            try:
+                self.httpd, self.thread = start_listener(self.server_class, ('127.0.0.1', self.port),
+                                                         self.handler_class)
+            except (OSError, RuntimeError):
+                return False   # The port or a thread is not to be had yet; the next check tries again.
+            self.rebuilt += 1
+            return True
 
     def count(self, name, amount=1):
         with self.metrics_lock:
@@ -249,8 +303,17 @@ class StreamServer:
         with self.metrics_lock:
             return dict(self.metrics, listener_rebuilt=self.rebuilt)
 
-    def close(self):
-        if self.httpd is not None:
-            self.httpd.shutdown()
-            self.httpd.server_close()
-        self.thread.join(timeout=3)
+    def close(self, drop=False):
+        """Stop accepting connections.
+
+        Responses that are already open normally run on while the player
+        reads what is cached; a switch to another source relies on that.
+        ``drop`` ends them within about a second. It is for a service that
+        Kodi is stopping: a paused player reads nothing, and the thread that
+        serves it would otherwise outlive the service.
+        """
+        with self.listener_lock:
+            self.closed = True
+            self.dropped = self.dropped or drop
+            httpd, thread = self.httpd, self.thread
+        retire_listener(httpd, thread)

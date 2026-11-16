@@ -1304,7 +1304,8 @@ class PeerPool:
                 result['pex_encryption_preferred_percent'] = round(100 * pex['encryption_preferred'] / pex['announced'])
         return result
 
-    def close(self):
+    def shut(self):
+        """Close every connection and tell every thread to stop. Waits for nothing."""
         self.closed = True
         self.stopping.set()
         self.swarm.stop()
@@ -1313,7 +1314,17 @@ class PeerPool:
             self.condition.notify_all()
         for peer in sessions:
             peer.close()
-        deadline = time.monotonic() + 10
+        return sessions
+
+    def close(self, patience=10):
+        """Close every connection now; wait at most ``patience`` seconds for the threads.
+
+        A dial attempt that is still timing out cannot be interrupted. Its
+        thread finds the pool closed and ends by itself, so a caller in a
+        hurry does not have to wait for it.
+        """
+        sessions = self.shut()
+        deadline = time.monotonic() + patience
         threads = self.connectors + [thread for thread in (self.refresher, self.maintainer) if thread]
         for thread in threads:
             if thread is not threading.current_thread():

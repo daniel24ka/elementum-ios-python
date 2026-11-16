@@ -272,7 +272,8 @@ class Downloads:
                 self.workers.pop(identity, None)
                 self.changed.notify_all()
 
-    def close(self):
+    def close(self, patience=10):
+        """Pause and save every job now; wait at most ``patience`` seconds for the workers."""
         self.closed.set()
         with self.changed:
             engines, workers = list(self.runtime.values()), list(self.workers.values())
@@ -280,11 +281,17 @@ class Downloads:
                 if job['status'] in self.BUSY + ('queued',):
                     job['status'] = 'paused'
                     job['requested_status'] = job.get('requested_status') or 'paused'
-            self._save(force=True)
+            failure = None
+            try:
+                self._save(force=True)
+            except Exception as error:   # A full disk must not keep the downloads running.
+                failure = error
             self.changed.notify_all()
         for engine in engines:
             engine.interrupt()
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + patience
         for worker in workers:
             worker.join(timeout=max(0, deadline - time.monotonic()))
-        self.scheduler.join(timeout=1)
+        self.scheduler.join(timeout=min(1, max(0.1, deadline - time.monotonic())))
+        if failure is not None:
+            raise failure

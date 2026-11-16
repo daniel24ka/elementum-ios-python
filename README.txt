@@ -169,7 +169,11 @@ and adaptive reads, with prior settings backed up. Sequential swarm runs had
 changing peer availability and different sample durations; these observations
 do not establish a universal throughput or startup-time improvement.
 
-Development build 0.3.4~dev1 (not published; not yet run on an iPhone):
+Development build 0.3.4~dev2 (a test build for manual install; the repository
+index still offers 0.3.3). 0.3.4~dev1 ran on an iPhone; what that showed, and
+what ~dev2 fixes, is at the top of CHANGELOG.txt:
+- Subtitle add-ons such as Wizdom now receive the IMDb number of what is
+  playing, and the service survives being switched off and on or updated.
 - Every piece is downloaded block by block from all unchoked peers at once, up
   to 20 connections. The piece a reader waits for comes first, a silent peer is
   set aside after about a second, and a corrupt block is traced to its sender.
@@ -213,7 +217,8 @@ peers, not a public swarm, and the reader is a model of Kodi, not Kodi.
 The table was measured before the review fixes described in CHANGELOG.txt; one
 more pass of all eight scenarios on the final code gave the same picture (no
 stalls, 1.2-6.3 s to start, 1.6-2.5 s after a seek) and is stored in the same
-file. 207 tests pass against the packaged code.
+file. The benchmark was repeated once on 0.3.4~dev2 with the same result (no
+stalls, 1.2-6.2 s to start, 1.6-2.5 s after a seek). 252 tests pass against the packaged code.
 
 Real-swarm check from a PC (tools/real_swarm_check.py, Sintel, peers only): one
 run of each version on the same evening. 0.3.3 was ready after 19.8 s and read
@@ -224,12 +229,14 @@ s; 16 KB of 173 MiB arrived twice. Public swarms change by the minute, so this
 shows that the new peer layer works with real clients; it is not a measurement
 of how much faster it is.
 
-Still to do on a physical iPhone: start, seek and a full film; a forced stall
-(source cut, Wi-Fi change) to see the trickle and the same-position resume;
-leaving Kodi and returning; memory while playing a torrent with 8-16 MiB
-pieces; subtitles and saved downloads after the peer-layer change.
+Done on a physical iPhone (Sintel, regular Kodi 21.3): start, seek, stop,
+subtitles through Wizdom, and switching the add-on off and on. Still to do
+there: a full-length film; a forced stall (source cut, Wi-Fi change) to see
+the trickle and the same-position resume; leaving Kodi and returning; memory
+while playing a torrent with 8-16 MiB pieces; saved downloads; Wizdom on an
+episode.
 
-Tools: python tools/package_addon.py --repo . --version 0.3.4~dev1 --output dist
+Tools: python tools/package_addon.py --repo . --version 0.3.4~dev2 --output dist
        python tools/validate_package.py dist/<zip> --out VALIDATION.json
        python tools/swarm_bench.py run --lib addon/resources/lib --out new.json
        python tools/swarm_bench.py compare old.json new.json

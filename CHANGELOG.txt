@@ -1,4 +1,73 @@
-0.3.4 (development build 0.3.4~dev1; not published, not yet run on an iPhone)
+0.3.4 (development build 0.3.4~dev2; a test build for manual install, not in the repository index)
+Found on an iPhone with 0.3.4~dev1, fixed in 0.3.4~dev2
+- Subtitle add-ons: the playing item now carries its IMDb number (the film's
+  own; for an episode the show's). Wizdom asks the player for it. Without it
+  Wizdom looked the film up by title at a second service and showed an empty
+  list whenever that lookup failed. 0.3.3 had the same gap. With the number,
+  Wizdom listed subtitles for the test film in 0.9 s on the phone.
+- Service restart: switching the add-on off and on, or updating it, shortly
+  after playback left it dead until Kodi was restarted ("Address already in
+  use"). The stopping service closed its swarm first and its local API port
+  last, Kodi ends a stopping script after five seconds wherever it stands,
+  and the new instance gave up at the first refusal. Now the port is given
+  back first; everything is told to stop before anything is waited for; the
+  waiting is bounded; the new instance retries a busy port and tells the
+  user after 20 s instead of dying; a service that could not start closes
+  its threads.
+- Stopping a film waits at most two seconds for dial attempts that are still
+  timing out (ten before). A cancelled or failed preparation no longer holds
+  the engine for up to ten more seconds, so the next source starts sooner.
+- The listener watchdog cannot reopen the stream of a session that ended,
+  one slow accept no longer makes it replace a healthy listener, and a
+  rebuild that fails half-way leaves no bound port that nobody serves.
+Independent review of that fix
+- Round one, four reviewers and then skeptics: 11 findings, all confirmed or
+  plausible, none refuted, all fixed with a test each (tests/test_restart.py).
+- Round two, three reviewers on those fixes: nothing wrong in playback, 13
+  low-severity findings (one a medium gap in the tests). Fixed: responses of
+  a stream that was closed before the service stops, a listener closed under
+  a running accept loop when no helper thread could start, a full disk that
+  kept downloads running at shutdown, a read-ahead thread that failed to
+  start, a web seed that answers nonsense; three test gaps closed. Left: a
+  download ended by Kodi's forced end before the shutdown reached it is
+  saved as failed with no text, and four gaps in the tests. Two of the three
+  skeptics of this round were stopped before they finished.
+  The ones that mattered most:
+  - Kodi's forced end (SystemExit, once per thread) could land inside the
+    shutdown and skip the steps after it. Every step now runs whatever
+    happened to the one before, and a last pass repeats them without waiting.
+  - Read-ahead threads of concurrent.futures stay blocked for ever when the
+    service is ended by force. They are replaced by threads that end by
+    themselves once the session is cancelled.
+  - A response to a paused player sat in sendall() until the player read
+    again. Writes are taken in one-second steps, and a stopping service drops
+    its open responses. An ordinary stop still lets the player finish what
+    is cached; a switch to another source relies on that.
+  - A play request that was waiting for the resume question could start a
+    session after the service had closed. A closed engine refuses it.
+  - A cancelled piece went on to the HTTP web seeds of a .torrent source.
+- Known limit: tracker announces and dial attempts that are in flight when
+  the service stops cannot be interrupted and can outlive it by a few
+  seconds. Kodi may then log "script didn't stop in 5 seconds"; the port is
+  already free, the state is saved, and the next instance starts right after.
+Measured on the iPhone (regular Kodi 21.3, Sintel only)
+- 0.3.4~dev1, started through Kodi's remote interface: first moving frame
+  7.0 s after the request (5.0 s of it preparation); duration and bitrate
+  read from the file; start buffer 1.2 MiB in 0.5 s; seek index found; a
+  seek to 60% played again after 2.4 s; 15 of 18 peers unchoked at 5 MiB/s;
+  playback advanced 15.1 s in 15 s; free memory fell by 70 to 115 MB while
+  playing with a 32 MiB cache; the menus answered after every stop.
+- Service restart with the first version of the fix, before the review: back
+  1.0 s after an idle switch, 1.9 s after a switch during playback and 5.6 s
+  after a switch right after a stop, where Kodi still logged its forced end
+  for lingering threads. "Address already in use" did not occur again. The
+  review fixes have not run on a device.
+- A weak source is still slow: two starts took 25-36 s. In the one that was
+  examined, the first source in the list failed to deliver metadata (10 s)
+  and the next one delivered about 80 KiB/s.
+- Not yet observed on a device: a forced stall (the trickle and the
+  same-position resume), leaving Kodi and returning, 8-16 MiB pieces, a full
+  film, Wizdom on an episode.
 Peers and scheduling
 - Download each piece block by block from every unchoked peer at once. Before,
   one whole piece came from one peer and at most four pieces moved at a time.
@@ -71,7 +140,7 @@ Tools and tests
 - tools/swarm_bench.py: scripted loopback swarm with real rates and faults,
   Kodi-like reader, comparison of two engine versions.
 - tools/real_swarm_check.py, tools/package_addon.py, tools/validate_package.py.
-- 207 tests pass against the packaged code (124 in 0.3.3), no skips.
+- 252 tests pass against the packaged code (124 in 0.3.3), no skips.
 - Two tests were rewritten because the mechanism they pinned was replaced
   (reserved upload slot, whole-piece fake peer); one test double gained keyword
   arguments. All other 0.3.3 tests are unchanged.

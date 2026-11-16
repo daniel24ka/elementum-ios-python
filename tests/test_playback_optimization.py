@@ -240,7 +240,7 @@ class ServiceRecoveryTests(unittest.TestCase):
         with patch.dict(sys.modules,stubs):
             spec.loader.exec_module(module)
             with patch.object(module,'Kodi',Kodi),patch.object(module,'Backend',lambda *args:backend),\
-                 patch.object(module,'BackendServer',lambda *args:types.SimpleNamespace(close=lambda:None)),\
+                 patch.object(module,'BackendServer',lambda *args:types.SimpleNamespace(close=lambda:None,release=lambda:None)),\
                  patch.object(module,'time',types.SimpleNamespace(monotonic=lambda:state['clock'])):
                 module.run()
         self.assertEqual(state['errors'],[])

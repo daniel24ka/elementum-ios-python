@@ -447,9 +447,10 @@ class ResumeRequestTests(unittest.TestCase):
 class ServiceLoopCase(unittest.TestCase):
     """The real service loop with stub Kodi modules, as in the stall recovery tests."""
 
-    def exercise(self, mode, position=90, loops=25, reopens=True, other_video_after=None):
+    def exercise(self, mode, position=90, loops=25, reopens=True, other_video_after=None, server=None, check=True):
         state = {'clock': 0, 'loops': 0, 'opens': [], 'seeks': [], 'errors': [], 'stops': 0,
-                 'signalled': False, 'reopened': False, 'resumes': [], 'rates': []}
+                 'signalled': False, 'reopened': False, 'resumes': [], 'rates': [], 'backend_closed': 0}
+        self.last_state = state    # Also readable when run() ends with an exception.
 
         def other_video():
             return other_video_after is not None and state['signalled'] and state['loops'] >= other_video_after
@@ -468,7 +469,8 @@ class ServiceLoopCase(unittest.TestCase):
             source_health=types.SimpleNamespace(
                 record=lambda *args, **kwargs: state['rates'].append(kwargs['rate']) if 'rate' in kwargs else None),
             announce_next_episode=lambda *args: None, save=lambda: None,
-            recovery_request=lambda session, position: None)
+            recovery_request=lambda session, position: None,
+            close=lambda *args: state.__setitem__('backend_closed', state['backend_closed'] + 1))
 
         def resume_request(session, position):
             state['resumes'].append(position)
@@ -546,10 +548,12 @@ class ServiceLoopCase(unittest.TestCase):
         with patch.dict(sys.modules, stubs):
             spec.loader.exec_module(module)
             with patch.object(module, 'Kodi', Kodi), patch.object(module, 'Backend', lambda *args: backend), \
-                    patch.object(module, 'BackendServer', lambda *args: types.SimpleNamespace(close=lambda: None)), \
+                    patch.object(module, 'BackendServer', server or (lambda *args: types.SimpleNamespace(
+                        close=lambda: None, release=lambda: None))), \
                     patch.object(module, 'time', types.SimpleNamespace(monotonic=lambda: state['clock'])):
                 module.run()
-        self.assertEqual(state['errors'], [])
+        if check:
+            self.assertEqual(state['errors'], [])
         return state
 
 

@@ -1,13 +1,13 @@
 """Validated v1 metainfo, piece integrity and a bounded verified-piece cache."""
 
 import hashlib
-import concurrent.futures
 import os
 import socket
 import struct
 import threading
 import time
 from collections import OrderedDict, deque
+from http.client import HTTPException
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
@@ -261,7 +261,151 @@ def fetch_peer_piece(meta, address, index, timeout=20):
         return meta.verify(index, b''.join(blocks[start] for start, _ in wanted))
 
 
-def _http_range(url, start, length, total, timeout):
+def run_all(steps, failed=None):
+    """Run every step, whatever happens to the one before it.
+
+    Kodi ends a service that takes more than five seconds to stop by raising
+    SystemExit once in each of its threads, wherever that thread stands. The
+    remaining steps still have to close their sockets and tell their threads,
+    so an error in one step is passed to ``failed`` and otherwise ignored,
+    and an interruption is raised again only after the last step.
+    """
+    interruption = None
+    for step in steps:
+        try:
+            step()
+        except Exception as error:
+            if failed is not None:
+                try:
+                    failed(error)
+                except Exception:
+                    pass
+        except BaseException as error:
+            interruption = interruption or error
+    if interruption is not None:
+        raise interruption
+
+
+class Task:
+    """What the read-ahead needs of a future: done(), cancel() and result()."""
+
+    QUEUED, RUNNING, DONE, CANCELLED = range(4)
+
+    def __init__(self, lock, call, arguments):
+        self.lock, self.call, self.arguments = lock, call, arguments
+        self.state = Task.QUEUED
+        self.finished = threading.Event()
+
+    def done(self):
+        return self.state >= Task.DONE
+
+    def cancel(self):
+        """True when the work had not started and now never will."""
+        with self.lock:
+            if self.state == Task.QUEUED:
+                self.state = Task.CANCELLED
+                self.call = self.arguments = None
+                self.finished.set()
+            return self.state == Task.CANCELLED
+
+    def result(self, timeout=None):
+        if not self.finished.wait(timeout):
+            raise TimeoutError('The task did not finish in time')
+
+
+class Workers:
+    """A few threads for read-ahead that end by themselves.
+
+    Kodi waits for every thread of a stopped service before it frees the
+    interpreter. The idle threads of concurrent.futures block without a
+    timeout and wake each other by passing one sentinel along; when Kodi has
+    to end the service by force, the thread that receives the sentinel dies
+    without passing it on and the others never leave. These threads wait in
+    half-second steps and leave once ``stopped`` is set, whether or not
+    anybody closed the pool.
+    """
+
+    def __init__(self, size, stopped):
+        self.size, self.stopped = size, stopped
+        self.condition = threading.Condition()
+        self.tasks = deque()
+        self.threads = []
+        self.idle = 0
+
+    def submit(self, call, *arguments):
+        task = Task(self.condition, call, arguments)
+        with self.condition:
+            self.tasks.append(task)
+            self.threads = [thread for thread in self.threads if thread.is_alive()]
+            if self.idle < len(self.tasks) and len(self.threads) < self.size:
+                thread = threading.Thread(target=self._work, daemon=True)
+                try:
+                    thread.start()
+                    self.threads.append(thread)
+                except RuntimeError:
+                    if not self.threads:   # Nobody is left to run it.
+                        self._drop()
+            self.condition.notify()
+        return task
+
+    def _drop(self):
+        for task in self.tasks:
+            if task.state == Task.QUEUED:
+                task.state = Task.CANCELLED
+                task.call = task.arguments = None
+                task.finished.set()
+        self.tasks.clear()
+
+    def _work(self):
+        while True:
+            with self.condition:
+                while not self.tasks:
+                    if self.stopped.is_set():
+                        return
+                    self.idle += 1
+                    try:
+                        self.condition.wait(0.5)
+                    finally:
+                        self.idle -= 1
+                if self.stopped.is_set():
+                    self._drop()
+                    return
+                task = self.tasks.popleft()
+                if task.state != Task.QUEUED:
+                    continue
+                task.state = Task.RUNNING
+                call, arguments = task.call, task.arguments
+                task.call = task.arguments = None
+            try:
+                call(*arguments)
+            except Exception:
+                pass   # The function reports its own failures.
+            finally:
+                task.state = Task.DONE
+                task.finished.set()
+
+    def close(self, patience=0.0):
+        """Drop what has not started; wait at most ``patience`` seconds for what runs."""
+        with self.condition:
+            self._drop()
+            threads = list(self.threads)
+            self.condition.notify_all()
+        deadline = time.monotonic() + patience
+        for thread in threads:
+            if thread is not threading.current_thread():
+                thread.join(max(0.0, deadline - time.monotonic()))
+
+
+def _http_range(url, start, length, total, timeout, cancel=None):
+    try:
+        return _read_range(url, start, length, total, timeout, cancel)
+    except HTTPException as error:
+        # Not an OSError: a web seed that answers nonsense used to end the whole
+        # piece instead of letting the next source try.
+        raise TorrentError('Webseed protocol error: ' + type(error).__name__) from None
+
+
+def _read_range(url, start, length, total, timeout, cancel=None):
     if urlsplit(url).scheme not in ('http', 'https'):
         raise TorrentError('Only HTTP(S) webseeds are supported')
     request = Request(url, headers={'Range': 'bytes={}-{}'.format(start, start + length - 1),
@@ -276,13 +420,21 @@ def _http_range(url, start, length, total, timeout):
                 raise TorrentError('Webseed returned incorrect Content-Range')
         elif response.status != 200 or start != 0 or length != total:
             raise TorrentError('Webseed did not honor the requested range')
-        data = response.read(length + 1)
+        # In steps: a session that was stopped must not download a whole piece for nothing.
+        data = bytearray()
+        while len(data) <= length:
+            if cancel is not None and cancel.is_set():
+                raise TorrentError('Cancelled')
+            chunk = response.read(min(262144, length + 1 - len(data)))
+            if not chunk:
+                break
+            data += chunk
         if len(data) != length:
             raise TorrentError('Incorrect webseed response size')
-        return data
+        return bytes(data)
 
 
-def fetch_webseed_piece(meta, base, index, timeout=15):
+def fetch_webseed_piece(meta, base, index, timeout=15, cancel=None):
     start = index * meta.piece_length
     end = start + meta.piece_size(index)
     content = bytearray()
@@ -298,7 +450,7 @@ def fetch_webseed_piece(meta, base, index, timeout=15):
             url = base + '/'.join(quote(part, safe='') for part in parts)
         else:
             url = base + quote(meta.name, safe='') if base.endswith('/') else base
-        content.extend(_http_range(url, lo - item['offset'], hi - lo, item['length'], timeout))
+        content.extend(_http_range(url, lo - item['offset'], hi - lo, item['length'], timeout, cancel))
     return meta.verify(index, bytes(content))
 
 
@@ -435,8 +587,12 @@ class PieceStore:
                     raise
                 except (OSError, TorrentError) as error:
                     errors.append(str(error))
+            # A stopped session does not go on to its other sources: each of them
+            # would open a connection after everything else has been closed.
             if content is None:
                 for address in self.peers:
+                    if self.cancel.is_set():
+                        raise TorrentError('Cancelled')
                     try:
                         content = fetch_peer_piece(self.meta, address, index)
                         self.last_source = 'TCP peer'
@@ -445,13 +601,17 @@ class PieceStore:
                         errors.append(str(error))
             if content is None and self.allow_webseeds:
                 for url in self.meta.webseeds:
+                    if self.cancel.is_set():
+                        raise TorrentError('Cancelled')
                     try:
-                        content = fetch_webseed_piece(self.meta, url, index)
+                        content = fetch_webseed_piece(self.meta, url, index, cancel=self.cancel)
                         self.last_source = 'HTTP webseed'
                         break
                     except (OSError, TorrentError) as error:
                         errors.append(str(error))
             if content is None:
+                if self.cancel.is_set():
+                    raise TorrentError('Cancelled')
                 with self.lock:
                     self.failures[index] = '; '.join(errors[-2:])[:200]
                     while len(self.failures) > 16:
@@ -548,7 +708,7 @@ class PieceStore:
             if self.cancel.is_set():
                 return
             if self.prefetch_executor is None:
-                self.prefetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.prefetch_workers)
+                self.prefetch_executor = Workers(self.prefetch_workers, self.cancel)
             self.prefetch_futures = {index: future for index, future in self.prefetch_futures.items() if not future.done()}
             for index in indexes:
                 if (0 <= index < len(self.meta.hashes) and index not in self.cache and
@@ -644,8 +804,10 @@ class PieceStore:
                             and flight[1] and not flight[2]):
                         abandoned.append(old)
             if self.readahead_thread is None:
-                self.readahead_thread = threading.Thread(target=self._read_ahead,daemon=True)
-                self.readahead_thread.start()
+                # Kept only once it runs: a start that fails is tried again next time.
+                thread = threading.Thread(target=self._read_ahead,daemon=True)
+                thread.start()
+                self.readahead_thread = thread
         if self.scheduler is not None:
             self.scheduler.focus(index)
         for old in abandoned:
@@ -683,15 +845,25 @@ class PieceStore:
                     'pinned_pieces':len(self.pinned), 'inflight_pieces':len(self.inflight),
                     'evicted_pieces':self.evictions, 'open_readers':len(self.readers)}
 
-    def close(self):
+    def close(self, wait=True):
+        """Cancel every read.
+
+        The store's threads end by themselves once ``cancel`` is set. ``wait``
+        only decides whether to stay until they have, for a few seconds at
+        most; a service that Kodi is stopping has no time for that.
+        """
         self.cancel.set()
         self.readahead_event.set()
-        if self.readahead_thread and self.readahead_thread is not threading.current_thread():
-            self.readahead_thread.join(timeout=2)
-        if self.prefetch_executor is not None:
-            for future in self.prefetch_futures.values():
-                future.cancel()
-            self.prefetch_executor.shutdown(wait=True)
+        workers = self.prefetch_executor
+        if workers is not None:
+            workers.close()
+        if not wait:
+            return
+        reader = self.readahead_thread
+        if reader is not None and reader.is_alive() and reader is not threading.current_thread():
+            reader.join(timeout=2)
+        if workers is not None:
+            workers.close(5.0)
 
     def _left_behind(self, generation):
         """A seek started reader ``generation``: stop treating older readers as urgent.

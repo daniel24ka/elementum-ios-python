@@ -211,9 +211,10 @@ class ReliabilityTests(unittest.TestCase):
                 entered.set()
                 released.wait(5)
                 raise TorrentError('No connected peer supplied a valid requested piece')
-            def close(self):
+            def close(self, patience=None):
                 self.closed = True
                 released.set()
+            shut = close
             def stats(self):
                 return {'connected_peers': 0}
         with tempfile.TemporaryDirectory() as profile:

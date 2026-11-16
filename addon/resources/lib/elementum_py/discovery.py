@@ -260,6 +260,21 @@ def udp_tracker(url, info_hash, identity, left=0, timeout=6, allow_local=False):
         return list(dict.fromkeys(native + mapped))
 
 
+def end_executor(executor):
+    """Shut an executor down without waiting, so that every idle thread really leaves.
+
+    Idle threads wake each other by passing one sentinel along. A thread that
+    Kodi is ending by force dies without passing it on, and the others would
+    wait for ever; here each of them gets a sentinel of its own.
+    """
+    executor.shutdown(wait=False)
+    try:
+        for _ in range(len(executor._threads)):
+            executor._work_queue.put(None)
+    except Exception:
+        pass   # Another executor implementation: the plain shutdown has to do.
+
+
 def tracker_peers(trackers, info_hash, left=0, timeout=10, allow_local=False, cancel=None,
                   enough=None, found=None):
     """Announce to every tracker in parallel.
@@ -300,7 +315,7 @@ def tracker_peers(trackers, info_hash, left=0, timeout=10, allow_local=False, ca
     finally:
         for future in futures:
             future.cancel()
-        executor.shutdown(wait=False)
+        end_executor(executor)
 
 
 def dht_peers(info_hash, timeout=12, bootstrap=BOOTSTRAP, allow_local=False, cancel=None, found=None,
@@ -592,5 +607,5 @@ def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=
         stopped.set()
         for future in futures:
             future.cancel()
-        executor.shutdown(wait=False)
-        discovery.shutdown(wait=False)
+        end_executor(executor)
+        end_executor(discovery)

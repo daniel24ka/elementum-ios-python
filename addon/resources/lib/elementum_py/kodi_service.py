@@ -1,5 +1,6 @@
 """Kodi service lifetime, dialogs, provider execution and playback history."""
 
+import errno
 import json
 import os
 import re
@@ -181,6 +182,38 @@ class Kodi:
             'LAN access is optional in settings. The token controls downloads and playback; keep it private.')
 
 
+PORT_PATIENCE = 20.0   # Seconds of quiet retries before the user is told about a held port.
+
+
+def bind_patiently(factory, wait, patience, tell=None):
+    """Call ``factory`` until the port it binds is free.
+
+    After an update, or when the add-on is switched off and on, Kodi starts
+    this service while the previous instance may still be closing and holding
+    the port. Giving up at the first refusal left the add-on dead until Kodi
+    itself was restarted. ``wait`` is Monitor.waitForAbort; None is returned
+    when Kodi stops the service first. With ``tell`` the attempts never end:
+    the user is told once after ``patience`` seconds and the port is tried
+    again every few seconds. Without it the error is raised after ``patience``.
+    """
+    started, told = time.monotonic(), False
+    while True:
+        try:
+            return factory()
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            waited = time.monotonic() - started
+            if waited >= patience:
+                if tell is None:
+                    raise
+                if not told:
+                    told = True
+                    tell()
+        if wait(0.5 if waited < patience else 5.0):
+            return None
+
+
 def run():
     addon = xbmcaddon.Addon('plugin.video.elementum')
     monitor = xbmc.Monitor()
@@ -190,11 +223,17 @@ def run():
     server = None
     published_ids = {}
     try:
-        server = BackendServer(backend)
+        server = bind_patiently(
+            lambda: BackendServer(backend), monitor.waitForAbort, PORT_PATIENCE,
+            lambda: kodi.error('Startup', 'The previous instance still holds the local port. '
+                                          'Restart Kodi if the menus stay empty'))
+        if server is None:
+            return   # Kodi stopped the service while it was waiting for the port.
         if kodi.setting('web_enabled') == 'true':
             try:
                 from .web import WebServer
-                backend.web = WebServer(backend, lan=kodi.setting('web_lan') == 'true')
+                backend.web = bind_patiently(lambda: WebServer(backend, lan=kodi.setting('web_lan') == 'true'),
+                                             monitor.waitForAbort, 5.0)
             except OSError:
                 kodi.error('Web interface', 'The dashboard port is unavailable; Kodi menus remain available')
         xbmc.log('Elementum Python backend listening on loopback', xbmc.LOGINFO)
@@ -334,7 +373,26 @@ def run():
     except Exception as error:
         kodi.error(type(error).__name__, str(error))
     finally:
-        kodi.clear_ids(published_ids)
-        kodi.progress_close()
-        if server:
-            server.close()
+        # Kodi ends a stopping script after five seconds wherever it stands and
+        # starts the next instance at once. The port is therefore given back
+        # first. The forced end comes once per thread: if it interrupted
+        # anything here, the last block still runs to its end and frees the
+        # port and tells everything else to stop, without waiting.
+        finished = False
+        try:
+            try:
+                if server:
+                    server.release()
+                kodi.clear_ids(published_ids)
+                kodi.progress_close()
+            finally:
+                if server:
+                    server.close()
+                else:
+                    backend.close()   # The API never opened; its threads still have to end.
+            finished = True
+        finally:
+            if not finished:
+                if server:
+                    server.release()
+                backend.close(0)
