@@ -1,3 +1,13 @@
+0.3.2
+- Fix native subtitle search dispatch: subtitle results replace video menus.
+- Add Hebrew-prioritized movie/episode subtitle search and actual downloads.
+- Match release names, preserve show IDs and use already cached movie hashes.
+- Normalize Hebrew subtitle encodings and validate archive/text responses.
+- Keep Kodi's native subtitle rendering and timing controls.
+- Preserve the MIT SubBridge license and source attribution.
+- Allow explicit resume=0 for controlled playback restarts; defaults unchanged.
+- Validate 101 packaged tests, including native subtitle-row contracts.
+
 0.3.1
 - Preserve explicit cancellation after a pending connection closes, preventing
   automatic source recovery from starting another torrent after Cancel.

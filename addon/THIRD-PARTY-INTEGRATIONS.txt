@@ -1,4 +1,4 @@
-Elementum iOS Python 0.3.1 beta
+Elementum iOS Python 0.3.2 beta
 
 Use existing Kodi companions instead of implementing another account/token stack.
 The following projects are not bundled, modified or relicensed in this distribution.

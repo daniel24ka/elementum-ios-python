@@ -62,7 +62,7 @@ class Kodi:
             return
         companion.openSettings()
 
-    def publish_ids(self, metadata):
+    def publish_ids(self, metadata, session=None):
         window = xbmcgui.Window(10000)
         snapshot = {}
         for name in ('script.trakt.ids', 'script.simkl.ids'):
@@ -72,6 +72,15 @@ class Kodi:
                 snapshot[name] = value
             else:
                 window.clearProperty(name)
+        if session:
+            from .subtitle_context import build_context
+            try:
+                context = json.dumps(build_context(session, session['stream'].url), ensure_ascii=False)
+                window.setProperty('elementum.subtitle.context', context)
+                snapshot['elementum.subtitle.context'] = context
+            except (ValueError, TypeError, KeyError, AttributeError):
+                window.clearProperty('elementum.subtitle.context')
+                xbmc.log('Elementum: subtitle matching details are unavailable', xbmc.LOGWARNING)
         return snapshot
 
     def clear_ids(self, snapshot):
@@ -198,7 +207,7 @@ def run():
                             player.seekTime(float(backend.pending_resume))
                             backend.pending_resume = 0
                         kodi.clear_ids(published_ids)
-                        published_ids = kodi.publish_ids(session.get('metadata', {}))
+                        published_ids = kodi.publish_ids(session.get('metadata', {}), session)
 
                         def announce(expected=url):
                             try:

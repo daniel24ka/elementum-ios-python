@@ -358,7 +358,7 @@ class Backend:
             previous = next((entry for entry in self.state['history'] if entry.get('uri') == uri
                 and (entry.get('file_index') == selected if selected is not None else entry.get('media', {}) == media)), None)
             self.pending_resume = 0
-            if previous and previous.get('position', 0) > 15 and self.kodi.resume(previous['position']):
+            if query.get('resume') != '0' and previous and previous.get('position', 0) > 15 and self.kodi.resume(previous['position']):
                 self.pending_resume = previous['position']
             metadata = {'label': title, 'label2': '', 'info': {'title': title, 'mediatype': 'video'}, 'art': {}}
             try:

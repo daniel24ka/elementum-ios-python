@@ -201,6 +201,13 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.backend.pending_resume, 80)
         self.assertEqual(len(self.backend.state['history']), 3)  # Fake engine resolves file 0.
 
+    def test_explicit_start_skips_resume_prompt_for_controlled_player_restart(self):
+        uri = 'magnet:?xt=urn:btih:' + 'a' * 40
+        self.backend.state['history'] = [{'uri': uri, 'file_index': 0, 'title': 'Fixture', 'position': 90, 'media': {}}]
+        self.kodi.resume = lambda position: self.fail('Explicit restart must not open a resume prompt')
+        self.backend.route('/play', {'uri': uri, 'oindex': '0', 'resume': '0'})
+        self.assertEqual(self.backend.pending_resume, 0)
+
     @unittest.skipUnless(hasattr(Backend, 'announce_next_episode'), 'Development preview integration')
     def test_companion_menu_uses_official_addons(self):
         self.assertEqual(len(self.get('/integrations')['items']), 3)

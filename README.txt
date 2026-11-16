@@ -1,6 +1,6 @@
 Elementum iOS Python — development port
 
-Status: 0.3.1 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
+Status: 0.3.2 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
 The original native engine's advanced feature set is not fully reproduced.
 This repository does not distribute a replacement Kodi application.
 
@@ -40,10 +40,9 @@ one-hour seek with webseeds disabled. This verifies start/seek/stop, not an
 entire movie playthrough. Another 2.4 GB source timed out during startup;
 availability and peer transfer quality still vary by source.
 
-Not yet equivalent to the original native engine: Trakt/SIMKL integrations,
-all maintenance/API routes, full multi-torrent download/seeding management,
-uTP/MSE, BitTorrent v2 and automatic episode sequencing. Do not describe this
-development build as the complete original Elementum engine.
+Native-engine parity remains incomplete: full maintenance/API routes, seeding,
+uTP/MSE and BitTorrent v2 remain pending. Companion integrations and persistent
+downloads are described below, with their validation limits.
 
 The existing Kodi application must remain validly signed. This add-on does
 not sign or renew Kodi. Kodi must stay in the foreground for iOS playback.
@@ -96,7 +95,7 @@ Version 0.3.0:
 - Cache up to four verified metadata results briefly; reserve upload slots
   for foreground reads/seeks and interrupt pending peer preparation on cancel.
 
-Validation: 85 packaged protocol/API/stress tests, including real peer download,
+Validation: 101 packaged protocol/API/stress tests, including real peer download,
 pause/restart/resume, corrupt-cache recheck and repair, offline range playback,
 storage rejection before transfer, Web auth/origin/deletion checks and recovery.
 Signed-in Trakt/SIMKL scrobbling and real-device Up Next transitions have not
@@ -105,3 +104,29 @@ been verified. Companion settings and source availability can affect behavior.
 Still pending: uploading/seeding management, uTP, MSE/PE transport encryption,
 BitTorrent v2/hybrid torrents, full native-engine feature/API parity and full TV
 STRM export. This is an independent Python port, not the native Elementum engine.
+
+Version 0.3.2 subtitles:
+- A dedicated native Kodi subtitle entry point replaces the incorrect video
+  menu previously displayed as subtitle results. Normal video search is intact.
+- Search movie/show IMDb identifiers and episode numbers via the public
+  OpenSubtitles Stremio endpoint; prefer Hebrew and retain Kodi language choices.
+- Display language, provider/release, hearing-impaired and matching indicators.
+- Use the original torrent filename and an available cached movie hash for
+  matching, without requesting extra torrent pieces for subtitle hashing.
+- Download validated SRT/ASS/VTT subtitles, including ZIP responses; normalize
+  UTF-8/BOM, UTF-16/32 and Windows-1255 Hebrew without reversing logical text.
+- Subtitle style, size, visibility and timing use Kodi's native controls.
+- Network/cache/archive limits and atomic bounded caches protect the player
+  from malformed provider responses. Provider availability and timing vary.
+- Existing Ktuvit/Wizdom subtitle providers remain separate and unmodified.
+
+Physical validation on ordinary iPhone Kodi 21.3: Sintel native subtitle search
+returned seven Hebrew/English results, a Hebrew SRT downloaded and loaded as an
+enabled Hebrew track, and the viewer confirmed readable Hebrew on screen.
+This verifies this film/provider path; it does not guarantee subtitle coverage
+or frame-exact synchronization for every movie or release.
+
+Subtitle integration adapts the MIT-licensed SubBridge project:
+https://github.com/subzero75/kodi-subbridge
+Its original license and modification notice are included in the add-on.
+No subtitle text, account credentials or device identifiers are distributed.

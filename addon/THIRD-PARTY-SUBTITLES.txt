@@ -1,0 +1,21 @@
+Elementum subtitle adapter
+
+Based on SubBridge, copyright (c) 2026 subzero75, MIT License.
+Source: https://github.com/subzero75/kodi-subbridge
+The complete license is retained in:
+resources/lib/elementum_py/subtitle_bridge/LICENSE.txt
+
+The adapted files retain SubBridge's native Kodi subtitle listing, public
+Stremio subtitle protocol, IMDb identification, language mapping and ranking.
+Changes: Elementum entry dispatch and settings, exact playback context and
+release names, Hebrew encoding normalization, bounded network/archive/cache
+handling, public-server URL validation and redacted diagnostic logging.
+
+Protocol reference:
+https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/api/responses/subtitles.md
+The default source is https://opensubtitles-v3.strem.io . Availability and
+language coverage depend on that service. No account credentials are bundled.
+
+Existing Wizdom/Ktuvit add-ons are separate providers and are not modified or
+copied into this distribution. Kodi remains responsible for rendering and
+subtitle timing controls; text is not reversed to simulate right-to-left.
