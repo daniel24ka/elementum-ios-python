@@ -233,16 +233,24 @@ class ReliabilityTests(unittest.TestCase):
                 self.assertFalse(worker.is_alive())
                 self.assertEqual(errors, ['Cancelled'])
 
-    def test_one_upload_slot_is_reserved_for_foreground_reads_and_seeks(self):
+    def test_read_ahead_runs_on_one_peer_and_foreground_reads_stay_exact(self):
+        # The old engine forbade read-ahead with a single upload slot, to keep the
+        # slot free for the player. The swarm now serves a waiting reader first
+        # (timed in test_swarm.test_urgent_read_overtakes_read_ahead_on_a_single_peer),
+        # so one peer may read ahead as well.
         with tempfile.TemporaryDirectory() as profile:
-            runtime = TorrentEngine(profile)
+            runtime = TorrentEngine(profile, lambda key: '0' if key == 'prebuffer_mb' else '')
             with patch('elementum_py.engine.resolve_magnet', return_value=(self.fixture.meta, [self.fixture.tcp.server_address])):
                 try:
                     runtime.prepare('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex(), peer_only=True)
                     store = runtime.active['store']
+                    self.assertEqual(runtime.last_preparation['start_buffer']['target_bytes'], 0)
                     store.prefetch([3, 4, 5])
-                    self.assertFalse(store.prefetch_futures)
+                    self.assertTrue(store.prefetch_futures)
                     self.assertEqual(b''.join(store.read(0, 400000, 20000)), self.fixture.payload[400000:420000])
+                    for future in list(store.prefetch_futures.values()):
+                        future.result(timeout=5)
+                    self.assertTrue(all(index in store.cache for index in (3, 4, 5)))
                 finally:
                     runtime.stop()
 
@@ -261,39 +269,10 @@ class ReliabilityTests(unittest.TestCase):
                 self.fixture.corrupt_piece_indices = set()
                 runtime.stop()
 
-    def test_pool_replaces_eight_stale_peers_and_stops_idle_workers(self):
-        import elementum_py.peers as peers
-        payload = self.fixture.payload[:self.fixture.piece_length]
-        attempts = []
-
-        class Peer:
-            def __init__(self, meta, address, cancel):
-                self.address = address
-                self.busy = threading.Lock()
-                self.closed = False
-                self.bytes_received, self.elapsed = 0, 1
-                attempts.append(address[1])
-
-            def fetch(self, index, timeout):
-                if self.address[1] < 9:
-                    raise MissingPiece('Synthetic peer has other pieces')
-                self.bytes_received += len(payload)
-                return payload
-
-            def close(self):
-                self.closed = True
-
-        addresses = [('127.0.0.1', index) for index in range(1, 13)]
-        with patch.object(peers, 'PeerSession', Peer), patch.object(peers.random.SystemRandom, 'shuffle', lambda *args: None):
-            pool = PeerPool(self.fixture.meta, addresses)
-            try:
-                pool.prepare(timeout=2)
-                self.assertEqual(pool.fetch(0, timeout=3), payload)
-                self.assertTrue(any(index >= 9 for index in attempts))
-                self.assertLessEqual(pool.stats()['connected_peers'], 8)
-            finally:
-                pool.close()
-            self.assertFalse(any(worker.is_alive() for worker in pool.connectors))
+    # test_pool_replaces_eight_stale_peers_and_stops_idle_workers used a fake peer
+    # class with a whole-piece fetch() method. Peers are now driven block by block,
+    # so the same guarantee is proven with real sockets in
+    # test_swarm.test_peers_without_any_wanted_piece_are_replaced.
 
     def test_verified_metadata_peer_is_not_lost_in_random_stale_endpoints(self):
         import elementum_py.peers as peers

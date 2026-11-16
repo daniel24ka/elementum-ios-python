@@ -18,6 +18,7 @@ from .downloads import Downloads
 from .version import VERSION
 from .integrations import COMPANIONS, playback_metadata, upnext_payload, upnext_notification
 from .source_health import SourceHealth, resolution
+from .playback_policy import user_message
 
 
 class Redirect:
@@ -329,8 +330,12 @@ class Backend:
                 raise TorrentError('Another video is being prepared; wait or cancel it first')
             try:
                 return self.play(query)
-            except (TorrentError, OSError, ValueError):
+            except (TorrentError, OSError, ValueError) as error:
                 self.last_failure = dict(getattr(self.engine, 'last_preparation', {}))
+                if isinstance(error, TorrentError):
+                    # The technical text stays in diagnostics; the viewer gets advice
+                    # for failures that are recognised, and the original text otherwise.
+                    raise TorrentError(user_message(str(error))) from None
                 raise
             finally:
                 self.play_lock.release()
@@ -380,10 +385,16 @@ class Backend:
             if getattr(self.engine, 'profile', self.profile) != self.profile:
                 self.engine.stop()
                 self.engine = TorrentEngine(self.profile, self.kodi.setting, self.kodi.progress, self.kodi.choose_file)
-            try:
-                prepared, uri = self.prepare_with_recovery(uri, selected, title, query)
-            finally:
-                self.kodi.progress_close()
+            prepared = None
+            if query.get('_reuse') == '1' and chain:
+                # Resume after a premature end: the session, its peers and its
+                # verified cache are still alive, so nothing is prepared again.
+                prepared = getattr(self.engine, 'reuse', lambda *args: None)(uri, selected)
+            if prepared is None:
+                try:
+                    prepared, uri = self.prepare_with_recovery(uri, selected, title, query)
+                finally:
+                    self.kodi.progress_close()
             self.last_info = metadata
             self.playback_query = playback_query
             session = self.engine.active
@@ -552,6 +563,24 @@ class Backend:
             return plugin_url('/play',uri=source['uri'],query=session['title'],resume='0',fallback='0',
                               _recovery=chain_id,peer_only='1' if session.get('peer_only') else '0',**query)
         return None
+
+    def resume_request(self, session, position):
+        """Reopen the same source at the same position, at most twice per title."""
+        if (self.kodi.setting('playback_recovery') == 'false' or self.shutdown.is_set()
+                or self.kodi.abort_requested() or self.engine.active is not session
+                or session.get('offline') or not 15 <= position <= 86400 or not session.get('uri')):
+            return None
+        chain_id = session.get('recovery_chain')
+        chain = self.recovery_chains.get(chain_id)
+        if not chain or chain.get('resumes', 0) >= 2:
+            return None
+        chain.update(resumes=chain.get('resumes', 0) + 1, position=float(position),
+                     expected=self.source_identity(session['uri']))
+        self.last_recovery['premature_end'] = {'attempt': chain['resumes'], 'resume_seconds': round(position, 2)}
+        return plugin_url('/play', uri=session['uri'], query=session['title'], resume='0', fallback='0',
+                          oindex=session['file_index'], _recovery=chain_id, _reuse='1',
+                          peer_only='1' if session.get('peer_only') else '0',
+                          **(session.get('playback_query') or {}))
 
     def download_route(self, path, query):
         if path == '/downloads':
@@ -768,11 +797,29 @@ class BackendServer:
         class Server(ThreadingHTTPServer):
             daemon_threads = True
 
+        self.server_class, self.handler_class = Server, Handler
         self.httpd = Server(('127.0.0.1', backend.port), Handler)
         backend.port = self.httpd.server_port
         backend.base_url = 'http://127.0.0.1:' + str(backend.port)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
+        self.rebuilt = 0
+
+    def ensure_listening(self):
+        """Reopen the local API on its port if a suspended iOS app lost the listener."""
+        from .streaming import listener_alive, retire_listener
+        if self.backend.shutdown.is_set() or listener_alive(self.backend.port):
+            return False
+        retire_listener(self.httpd, self.thread)
+        try:
+            self.httpd = self.server_class(('127.0.0.1', self.backend.port), self.handler_class)
+        except OSError:
+            self.httpd = None
+            return False
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        self.rebuilt += 1
+        return True
 
     def close(self):
         self.backend.shutdown.set()
@@ -780,6 +827,7 @@ class BackendServer:
             self.backend.web.close()
         self.backend.downloads.close()
         self.backend.engine.stop()
-        self.httpd.shutdown()
-        self.httpd.server_close()
+        if self.httpd is not None:
+            self.httpd.shutdown()
+            self.httpd.server_close()
         self.thread.join(timeout=3)

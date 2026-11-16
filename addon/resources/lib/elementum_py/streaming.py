@@ -1,13 +1,59 @@
 """Loopback-only HTTP range streaming for the experimental Python engine."""
 
 import hmac
+import re
 import secrets
+import socket
 import threading
 import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .core import TorrentError
+
+TYPES = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mkv': 'video/x-matroska',
+         '.avi': 'video/x-msvideo', '.webm': 'video/webm', '.mov': 'video/quicktime', '.ts': 'video/mp2t'}
+# Kodi's file cache treats about ten seconds without a single byte as the end of
+# the file once its own buffer is empty, and playback then simply stops. A small
+# verified reserve is therefore held back and released slowly during a stall, so
+# the player keeps showing "buffering" while the swarm or a new source recovers.
+RESERVE = 64 * 1024
+DRIP = 256
+HEARTBEAT = 1.0
+
+
+def retire_listener(httpd, thread):
+    """Stop an accept loop whose socket the system took away, then free the socket.
+
+    Closing the socket alone would leave serve_forever() polling a dead
+    descriptor, which spins at full speed on platforms that use poll().
+    """
+    if httpd is None:
+        return
+    stopper = threading.Thread(target=httpd.shutdown, daemon=True)
+    stopper.start()
+    stopper.join(timeout=2)
+    try:
+        httpd.server_close()
+    except OSError:
+        pass
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout=1)
+
+
+def listener_alive(port):
+    """True when a loopback listener still accepts connections."""
+    try:
+        socket.create_connection(('127.0.0.1', port), timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def stream_mime(url):
+    """MIME type of one of this engine's own stream URLs, otherwise None."""
+    match = re.fullmatch(r'http://127\.0\.0\.1:\d{1,5}/[a-f0-9]{48}/video(\.[a-z0-9]{2,4})', str(url or ''))
+    return TYPES.get(match.group(1)) if match else None
 
 
 def parse_range(value, size):
@@ -35,17 +81,17 @@ def parse_range(value, size):
 
 
 class StreamServer:
-    def __init__(self, store, file_index):
+    def __init__(self, store, file_index, heartbeat=HEARTBEAT, reserve=RESERVE, drip=DRIP):
         self.store = store
         self.file_index = file_index
+        self.heartbeat, self.reserve, self.drip = heartbeat, reserve, drip
         self.token = secrets.token_hex(24)
         extension = os.path.splitext(store.meta.files[file_index]['path'][-1])[1].lower()
-        types = {'.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mkv': 'video/x-matroska',
-                 '.avi': 'video/x-msvideo', '.webm': 'video/webm', '.mov': 'video/quicktime', '.ts': 'video/mp2t'}
-        self.extension = extension if extension in types else '.mp4'
-        self.mime_type = types.get(extension, 'application/octet-stream')
+        self.extension = extension if extension in TYPES else '.mp4'
+        self.mime_type = TYPES.get(extension, 'application/octet-stream')
         self.metrics_lock = threading.Lock()
-        self.metrics = {'requests':0,'delivered_bytes':0,'source_errors':0,'last_source_error':0}
+        self.metrics = {'requests':0,'delivered_bytes':0,'source_errors':0,'last_source_error':0,
+                        'stall_seconds':0,'dripped_bytes':0,'open_responses':0}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -66,8 +112,7 @@ class StreamServer:
                     self.send_error(404)
                     return
                 size = owner.store.meta.files[owner.file_index]['length']
-                with owner.metrics_lock:
-                    owner.metrics['requests'] += 1
+                owner.count('requests')
                 try:
                     start, end, status = parse_range(self.headers.get('Range'), size)
                 except (TorrentError, ValueError):
@@ -78,12 +123,19 @@ class StreamServer:
                     self.end_headers()
                     self.close_connection = True
                     return
+                parts = None
+                first = b''
                 try:
                     # Fail before sending 200/206 if the first requested piece is unavailable.
-                    parts = owner.store.read(owner.file_index, start, end - start + 1)
-                    first = next(parts) if send_body else b''
+                    if send_body:
+                        parts = owner.store.read(owner.file_index, start, end - start + 1, heartbeat=owner.heartbeat)
+                        for first in parts:
+                            if len(first):
+                                break
                 except (OSError, TorrentError):
                     owner.source_error()
+                    if parts is not None:
+                        parts.close()
                     self.send_error(503, 'Torrent source unavailable')
                     return
                 self.send_response(status)
@@ -96,31 +148,97 @@ class StreamServer:
                 self.end_headers()
                 self.close_connection = True
                 if send_body:
+                    owner.count('open_responses')
                     try:
-                        self.wfile.write(first)
-                        with owner.metrics_lock:
-                            owner.metrics['delivered_bytes'] += len(first)
-                        for content in parts:
-                            self.wfile.write(content)
-                            with owner.metrics_lock:
-                                owner.metrics['delivered_bytes'] += len(content)
+                        # Hand the first chunk over without keeping a reference here:
+                        # this frame lives as long as the response, the piece must not.
+                        holder, first = [first], None
+                        self.deliver(parts, holder)
                     except TorrentError:
                         owner.source_error()
-                        self.close_connection = True
                     except OSError:
                         # Kodi closes old range sockets during seeks; that is
                         # not a failed torrent and must not trigger recovery.
-                        self.close_connection = True
+                        pass
                     finally:
                         parts.close()
+                        owner.count('open_responses', -1)
+
+            def write(self, data):
+                self.wfile.write(data)
+                owner.count('delivered_bytes', len(data))
+
+            def deliver(self, parts, holder):
+                chunk = holder.pop()
+                held = b''   # Verified bytes not sent yet; never more than the reserve.
+                reserve = owner.reserve
+                try:
+                    while True:
+                        size = len(chunk)
+                        if size > reserve:
+                            if held:
+                                self.write(held)
+                            self.write(chunk[:size - reserve])
+                            held = bytes(chunk[size - reserve:])
+                        elif size:
+                            held += bytes(chunk)
+                            if len(held) > reserve:
+                                self.write(held[:len(held) - reserve])
+                                held = held[len(held) - reserve:]
+                        elif held:
+                            # No verified piece arrived within the heartbeat.
+                            self.write(held[:owner.drip])
+                            held = held[owner.drip:]
+                            owner.count('dripped_bytes', min(owner.drip, len(held) + owner.drip))
+                            owner.count('stall_seconds', owner.heartbeat)
+                        else:
+                            owner.count('stall_seconds', owner.heartbeat)
+                        chunk = None   # Do not keep a whole piece alive while waiting for the next one.
+                        try:
+                            chunk = next(parts)
+                        except StopIteration:
+                            break
+                finally:
+                    # The reserve is verified and in order: deliver it even when
+                    # the source fails afterwards, so no accepted byte is lost.
+                    if held:
+                        self.write(held)
 
         class Server(ThreadingHTTPServer):
             daemon_threads = True
+            allow_reuse_address = True
 
+        self.server_class, self.handler_class = Server, Handler
         self.httpd = Server(('127.0.0.1', 0), Handler)
+        self.port = self.httpd.server_port
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
+        self.rebuilt = 0
         self.url = 'http://127.0.0.1:{}/{}/video{}'.format(self.httpd.server_port, self.token, self.extension)
+
+    def ensure_listening(self):
+        """Reopen the listener on the same port if the system took it away.
+
+        iOS reclaims the sockets of a suspended app; a listener does not come
+        back by itself when Kodi returns to the foreground, and the stream URL
+        the player holds would then refuse every reconnect.
+        """
+        if listener_alive(self.port):
+            return False
+        retire_listener(self.httpd, self.thread)
+        try:
+            self.httpd = self.server_class(('127.0.0.1', self.port), self.handler_class)
+        except OSError:
+            self.httpd = None   # The port is not free yet; the next check tries again.
+            return False
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        self.rebuilt += 1
+        return True
+
+    def count(self, name, amount=1):
+        with self.metrics_lock:
+            self.metrics[name] += amount
 
     def source_error(self):
         with self.metrics_lock:
@@ -129,9 +247,10 @@ class StreamServer:
 
     def stats(self):
         with self.metrics_lock:
-            return dict(self.metrics)
+            return dict(self.metrics, listener_rebuilt=self.rebuilt)
 
     def close(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
+        if self.httpd is not None:
+            self.httpd.shutdown()
+            self.httpd.server_close()
         self.thread.join(timeout=3)

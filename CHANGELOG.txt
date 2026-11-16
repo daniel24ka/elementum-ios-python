@@ -1,3 +1,84 @@
+0.3.4 (development build 0.3.4~dev1; not published, not yet run on an iPhone)
+Peers and scheduling
+- Download each piece block by block from every unchoked peer at once. Before,
+  one whole piece came from one peer and at most four pieces moved at a time.
+- Serve the piece a reader waits for first; pipeline each peer by its measured
+  rate; take over blocks that wait deep in another peer's queue; request an
+  overdue urgent block a second time; snub a silent peer instead of waiting.
+- Keep idle peers. The old reader dropped every peer that sent nothing for ten
+  seconds and never dialed it again, so a swarm shrank to its busiest peers.
+- Up to 20 connections while streaming (setting, 4-40) instead of 8; send
+  keep-alives; dial a peer that delivered data again after a drop.
+- Replace a peer that stays choked, stays silent or has none of the wanted
+  pieces when a new candidate is waiting; keep peers that only miss one piece.
+- Trace a failed piece to the peer whose block differs from the verified
+  piece and ban only that peer. Every delivered byte is still SHA-1 verified.
+- BEP 6 fast extension (HAVE_ALL/HAVE_NONE, explicit rejects, allowed-fast),
+  PEX IPv6 peers and flags.
+Cache and reading
+- Fix eviction that discarded read-ahead before it was read: once the cache was
+  full, every piece was downloaded almost four times (200 pieces, 755 fetches).
+- Keep the first and last piece in a cache of 16 pieces or more.
+- Follow the reader that is really moving when Kodi parks a connection during
+  a seek; stop treating the parked reader's piece as urgent.
+- Measure throughput by wall clock, so parallel pieces are not counted twice.
+- No second copy of a piece on its way to the player (memory views).
+Start and seek
+- Read the duration from the Matroska/MP4 header: about eight seconds of this
+  video are buffered before playback (setting, 0-16 MiB cap), less when the
+  swarm is clearly faster than the video. Progress shows percent, rate, peers.
+- Find a seek index stored after the media (MP4 moov, Matroska Cues) and fetch
+  it while the start buffer fills.
+- Move read-ahead to the new position when a seek starts, not after its first
+  piece, and cancel read-ahead that the seek left behind.
+- Tell Kodi the stream's MIME type: two HEAD probes and one discarded GET less.
+Discovery
+- Thirteen built-in public trackers that each answered two announces on
+  2026-11-16, added to the source's own trackers (never for a private torrent).
+- Use each tracker's and each DHT node's peers the moment they answer; try 32
+  peers for metadata at once; five DHT bootstrap routers; remember DHT nodes
+  between sessions; reuse verified metadata saved by an earlier session.
+- UDP trackers fall back to IPv6 when IPv4 has no route (NAT64 networks).
+Stalls and recovery
+- Hold back 64 KiB of verified data and release 256 bytes a second during a
+  stall. Kodi ends playback after about ten seconds without a byte once its
+  cache is empty; with the trickle it keeps buffering and recovery can act.
+- Reopen the same live session at the same position when Kodi ends playback
+  far from the end without a user stop (at most twice per title).
+- Reopen the local listeners if iOS reclaimed them while Kodi was suspended.
+- Stable failure reasons in diagnostics and plain advice for the viewer.
+Independent review before packaging
+- Four reviewers read the new code by area and a skeptic then tried to refute
+  or reproduce each report: 25 defects confirmed, 1 plausible, none refuted.
+  All 26 are fixed and each has a regression test (tests/test_review_fixes.py).
+  The ones that mattered most:
+  - A BEP 6 peer that chokes must reject every queued request. Those rejects
+    were counted as misbehaviour, so an ordinary libtorrent-family seeder was
+    set aside after its first upload-slot rotation and never used again.
+  - A fast peer that went silent kept slower healthy peers away from the last
+    blocks of the awaited piece, which then never completed.
+  - The single-peer retry after a hash failure stalled when that peer was the
+    slower one, or when it merely choked.
+  - One peer that stopped reading its socket could hold up every scheduler
+    thread for up to 150 seconds; replies a peer can solicit are now bounded.
+  - A crafted Matroska header made the duration reader quadratic (hours).
+  - A broken reply from one HTTP tracker aborted the whole magnet lookup.
+  - Two connections waiting for the same piece could cancel each other; a
+    closed connection restarted the piece it had just given up; the read-ahead
+    window did not return to an older connection that Kodi resumed.
+  - A rebuilt listener left its old accept loop spinning on a dead socket.
+Tools and tests
+- tools/swarm_bench.py: scripted loopback swarm with real rates and faults,
+  Kodi-like reader, comparison of two engine versions.
+- tools/real_swarm_check.py, tools/package_addon.py, tools/validate_package.py.
+- 207 tests pass against the packaged code (124 in 0.3.3), no skips.
+- Two tests were rewritten because the mechanism they pinned was replaced
+  (reserved upload slot, whole-piece fake peer); one test double gained keyword
+  arguments. All other 0.3.3 tests are unchanged.
+- Not done: uTP, MSE/PE encryption, BitTorrent v2, upload. A real swarm showed
+  1 of 140 failed dials closing after a plaintext handshake, so encryption
+  would add little; the engine now reports that figure and the PEX share.
+
 0.3.3
 - Add continuous, adaptive, memory-bounded verified torrent read-ahead.
 - Prioritize new seek windows and retain foreground upload-slot reservations.
