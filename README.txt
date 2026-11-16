@@ -1,6 +1,7 @@
 Elementum iOS Python — development port
 
-Status: experimental, not complete original-engine feature parity.
+Status: beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
+The original native engine's advanced feature set is not fully reproduced.
 This repository does not distribute a replacement Kodi application.
 
 Kodi source URL:
@@ -19,6 +20,7 @@ integration, general/movie/episode search, v1 magnets and metadata exchange,
 HTTP/UDP trackers, iterative DHT peer lookup, persistent TCP peer transfers,
 piece integrity checks, HTTP range streaming, file selection, disk/memory cache,
 playback history and resume, and basic movie STRM library entries.
+Memory cache is the default, so watching does not retain entire films on disk.
 
 Validation: local protocol/API integration tests, public Ubuntu/Sintel peer
 metadata and verified pieces, plus Sintel picture and sound on ordinary Kodi

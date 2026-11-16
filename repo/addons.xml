@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<addons><addon id="plugin.video.elementum" name="Elementum iOS Python Development" version="0.2.0" provider-name="elgatito">
+<addons><addon id="plugin.video.elementum" name="Elementum iOS Python Beta" version="0.2.1" provider-name="elgatito">
     <requires>
         <import addon="xbmc.addon" version="16.0.0" />
         <import addon="repository.elementumorg" optional="true" />
@@ -30,8 +30,8 @@
         <disclaimer lang="sv">Skaparen äger inte eller är värd av något innehåll som finns i detta tillägg. Författaren är inte ansluten till eller på något annat sätt en del av Kodi, Team Kodi eller XBMC Foundation.</disclaimer>
         <language>en el es de fi fr he hr it nl pt ro sk sv</language>
         <platform>all</platform>
-        <website>http://elementum.surge.sh/</website>
-        <source>https://github.com/elgatito/plugin.video.elementum</source>
+        <website>https://daniel24ka.github.io/elementum-ios-python/</website>
+        <source>https://github.com/daniel24ka/elementum-ios-python</source>
         <forum />
         <license>MIT; upstream credits and license preserved</license>
         <assets>

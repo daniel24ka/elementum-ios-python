@@ -1,15 +1,15 @@
 [
   {
     "id": "plugin.video.elementum",
-    "version": "0.2.0",
-    "bytes": 6899982,
-    "sha256": "82505c3988ee94bc717513a6c45a79bf9feb3b5e8d34dbe0fa0da43341740e4e"
+    "version": "0.2.1",
+    "bytes": 6899991,
+    "sha256": "ebc552f20ab81cf2c0de28b8d1c93e610f388e0026df18904bebd7a5277b2f6e"
   },
   {
     "id": "repository.elementumios.python",
     "version": "0.1.0",
     "bytes": 654,
-    "sha256": "e81a45a3b8e02d87a500d3f0f3621148b474e8bc6431fbd13668ab8d25ab2535"
+    "sha256": "56e26545b102d4e1f2e3b7dd1253273ac53eb39e385f4f1c4149a87ada532e39"
   },
   {
     "id": "script.elementum.burst",
