@@ -1,4 +1,4 @@
-0.3.4 (development build 0.3.4~dev2; a test build for manual install, not in the repository index)
+0.3.4 (the test build 0.3.4~dev2 with its version number changed)
 Found on an iPhone with 0.3.4~dev1, fixed in 0.3.4~dev2
 - Subtitle add-ons: the playing item now carries its IMDb number (the film's
   own; for an episode the show's). Wizdom asks the player for it. Without it
@@ -65,6 +65,8 @@ Measured on the iPhone (regular Kodi 21.3, Sintel only)
 - A weak source is still slow: two starts took 25-36 s. In the one that was
   examined, the first source in the list failed to deliver metadata (10 s)
   and the next one delivered about 80 KiB/s.
+- 0.3.4~dev2 was then installed on the iPhone from its ZIP file. Its user
+  reports that playback and Wizdom subtitles work; nothing was measured.
 - Not yet observed on a device: a forced stall (the trickle and the
   same-position resume), leaving Kodi and returning, 8-16 MiB pieces, a full
   film, Wizdom on an episode.
