@@ -1,0 +1,15 @@
+0.2.3
+- Accept larger torrent pieces and tolerate unordered peer control dictionaries.
+- Retain strict info-hash, piece integrity and duplicate-key validation.
+- Bound prefetch memory and release completed Future results.
+- Replace unusable peer connections; honor the peer request-queue limit.
+- Discover tracker/DHT peers concurrently and prefetch video tail indexes.
+- Share simultaneous catalog requests and retain English titles for providers.
+- Close source-search progress dialogs on success, cancellation and failure.
+- Display backend HTTP errors once instead of replaying failed playback requests.
+- Add diagnostics and protocol, stress, cancellation and 24 GiB addressing tests.
+
+0.2.2
+- Fix Windows CRLF checksum sidecars that caused Kodi installation failures.
+
+Advanced companion integrations remain a separate development preview.

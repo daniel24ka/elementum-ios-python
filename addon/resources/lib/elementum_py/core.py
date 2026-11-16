@@ -1,9 +1,4 @@
-"""Small stdlib-only BitTorrent feasibility engine, compatible with Python 3.8+.
-
-Implements validated v1 metainfo, BEP 3 TCP piece retrieval, BEP 19 HTTP
-webseeds and a bounded verified-piece cache. No native engine is loaded.
-This is an experiment: no DHT, magnets, tracker discovery, uploading or MSE.
-"""
+"""Validated v1 metainfo, piece integrity and a bounded verified-piece cache."""
 
 import hashlib
 import concurrent.futures
@@ -34,8 +29,12 @@ def bencode(value):
     raise TorrentError('Unsupported bencode type')
 
 
-def bdecode(data, prefix=False):
-    """Reject ambiguous encodings so re-encoded info hashes are identical."""
+def bdecode(data, prefix=False, strict=True):
+    """Keep metainfo canonical; tolerate unordered peer-control dictionaries.
+
+    Duplicate keys and malformed integers remain invalid in both modes. Relaxed
+    decoding is never used for the info dictionary whose raw bytes are hashed.
+    """
     if not isinstance(data, bytes) or len(data) > 2 * 1024 * 1024:
         raise TorrentError('Metainfo must be bytes, at most 2 MiB')
     position = 0
@@ -68,7 +67,8 @@ def bdecode(data, prefix=False):
                 if tag == b'l':
                     result.append(key)
                 else:
-                    if not isinstance(key, bytes) or (previous is not None and key <= previous):
+                    if (not isinstance(key, bytes) or key in result or
+                            (strict and previous is not None and key <= previous)):
                         raise TorrentError('Dictionary keys must be unique and sorted')
                     result[key] = parse(depth + 1)
                     previous = key
@@ -142,8 +142,8 @@ class Metainfo:
         self.info_hash = hashlib.sha1(bencode(info)).digest()
         self.piece_length = info.get(b'piece length')
         if (type(self.piece_length) is not int or
-                not 16384 <= self.piece_length <= 4 * 1024 * 1024):
-            raise TorrentError('Piece length must be 16 KiB to 4 MiB')
+                not 16384 <= self.piece_length <= 64 * 1024 * 1024):
+            raise TorrentError('Piece length must be 16 KiB to 64 MiB')
         hashes = info.get(b'pieces')
         if not isinstance(hashes, bytes) or len(hashes) % 20:
             raise TorrentError('Invalid piece hashes')
@@ -317,6 +317,7 @@ class PieceStore:
         self.disk_hits = 0
         self.prefetch_executor = None
         self.prefetch_futures = {}
+        self.prefetch_workers = max(1, min(3, max_cache_bytes // meta.piece_length))
         if cache_dir:
             os.makedirs(cache_dir, exist_ok=True)
 
@@ -404,12 +405,20 @@ class PieceStore:
             if self.cancel.is_set():
                 return
             if self.prefetch_executor is None:
-                self.prefetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+                self.prefetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.prefetch_workers)
             self.prefetch_futures = {index: future for index, future in self.prefetch_futures.items() if not future.done()}
             for index in indexes:
                 if (0 <= index < len(self.meta.hashes) and index not in self.cache and
-                        index not in self.prefetch_futures and len(self.prefetch_futures) < 4):
-                    self.prefetch_futures[index] = self.prefetch_executor.submit(self.piece, index)
+                        index not in self.prefetch_futures and len(self.prefetch_futures) < self.prefetch_workers):
+                    self.prefetch_futures[index] = self.prefetch_executor.submit(self._prefetch, index)
+
+    def _prefetch(self, index):
+        # A completed Future must not retain another large piece outside the LRU.
+        # Foreground reads retry failed prefetches through the normal source path.
+        try:
+            self.piece(index)
+        except (TorrentError, OSError):
+            pass
 
     def close(self):
         self.cancel.set()

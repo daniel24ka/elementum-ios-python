@@ -1,0 +1,20 @@
+{
+  "version": "0.2.3",
+  "packaged_tests_passed": 50,
+  "preview_only_tests_skipped": 2,
+  "physical_iphone_ordinary_kodi": true,
+  "peer_only_sintel_started": true,
+  "seek_to_minute_eight_verified": true,
+  "clean_stop_verified": true,
+  "synthetic_24_gib_tcp_seek_verified": true,
+  "actual_large_video_file_bytes": 30323795308,
+  "actual_large_video_started": true,
+  "actual_large_video_one_hour_seek_verified": true,
+  "actual_large_video_clean_stop": true,
+  "actual_large_video_startup_seconds": 44.36,
+  "actual_large_video_verified_peer_bytes": 98618072,
+  "entire_movie_playthrough_verified": false,
+  "another_2431697820_byte_source_started": false,
+  "iphone_code_files_matching_package": 54,
+  "advanced_native_engine_parity": false
+}

@@ -81,9 +81,21 @@ class Kodi:
 
     def status(self, stats):
         xbmcgui.Dialog().textviewer('Elementum Python backend',
-                                    'Development version 0.2.0\n\n' + json.dumps(stats, indent=2) +
+                                    'Version 0.2.3\n\n' + json.dumps(stats, indent=2) +
                                     '\n\nPython torrent engine; no additional native library.\n'
                                     'Feature parity with the original engine is still under development.')
+
+    def provider_health(self):
+        try:
+            path = xbmcvfs.translatePath('special://logpath/kodi.log')
+            with open(path, 'rb') as handle:
+                handle.seek(0, 2)
+                handle.seek(max(0, handle.tell() - 65536))
+                recent = handle.read(65536).decode('utf-8', errors='replace')
+            domains = re.findall(r'\[script\.elementum\.burst\] Cloudflare challenge for ([a-zA-Z0-9.-]+):', recent)
+            return {'blocked_domains': list(dict.fromkeys(domains))[-12:]}
+        except OSError:
+            return {}
 
 
 def run():

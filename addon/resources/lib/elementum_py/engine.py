@@ -21,8 +21,10 @@ class TorrentEngine:
         self.progress = progress or (lambda message: None)
         self.choose_file = choose_file
         self.lock = threading.RLock()
+        self.session_lock = threading.Lock()
         self.active = None
         self.preparing = None
+        self.last_metadata_diagnostics = {}
         self.cache_root = os.path.join(profile, 'python-torrents')
         os.makedirs(self.cache_root, exist_ok=True)
 
@@ -38,7 +40,9 @@ class TorrentEngine:
                 self.progress('Reading torrent metadata')
                 peers = []
                 if uri.startswith('magnet:?'):
-                    meta, peers = resolve_magnet(uri, cancel=cancel, use_dht=self.get_setting('dht_enabled') != 'false')
+                    self.last_metadata_diagnostics = {}
+                    meta, peers = resolve_magnet(uri, cancel=cancel, use_dht=self.get_setting('dht_enabled') != 'false',
+                                                 diagnostics=self.last_metadata_diagnostics)
                 else:
                     if urlsplit(uri).scheme not in ('http', 'https'):
                         raise TorrentError('Use an HTTP(S) torrent URL or a magnet link')
@@ -104,16 +108,21 @@ class TorrentEngine:
                 self.progress('Buffering verified torrent pieces')
                 first = meta.files[file_index]['offset'] // meta.piece_length
                 last = (meta.files[file_index]['offset'] + meta.files[file_index]['length'] - 1) // meta.piece_length
-                store.prefetch(range(first, min(first + 5, last + 1)))
+                # Kodi may read the tail immediately for MP4/MKV codec indexes.
+                # Start and end pieces share the existing bounded prefetch budget.
+                store.prefetch([first, last])
                 store.piece(first)
+                if last != first:
+                    store.prefetch([last])
                 stream = StreamServer(store, file_index)
                 session = {'meta': meta, 'pool': pool, 'store': store, 'stream': stream,
                            'cancel': cancel, 'file_index': file_index, 'uri': uri,
                            'title': title or meta.name, 'created': time.time()}
-                if cancel.is_set():
-                    raise TorrentError('Cancelled')
-                self.active = session
-                self.preparing = None
+                with self.session_lock:
+                    if cancel.is_set():
+                        raise TorrentError('Cancelled')
+                    self.active = session
+                    self.preparing = None
                 return {'url': stream.url, 'info_hash': meta.info_hash.hex(), 'title': session['title'],
                         'selected_file': '/'.join(meta.files[file_index]['path']), 'file_index': file_index,
                         'source': 'TCP peers' if pool else 'HTTP webseed'}
@@ -130,10 +139,11 @@ class TorrentEngine:
 
     def stop(self):
         # Cancellation precedes taking the session lock to interrupt a pending prepare.
-        if self.preparing is not None:
-            self.preparing.set()
-        session = self.active
-        self.active = None
+        with self.session_lock:
+            if self.preparing is not None:
+                self.preparing.set()
+            session = self.active
+            self.active = None
         if not session:
             return
         session['cancel'].set()
@@ -146,10 +156,14 @@ class TorrentEngine:
         session = self.active
         if not session:
             return {'active': False}
+        with session['store'].lock:
+            cached_bytes = sum(len(value) for value in session['store'].cache.values())
         result = {'active': True, 'title': session['title'], 'info_hash': session['meta'].info_hash.hex(),
                   'file_index': session['file_index'], 'verified_pieces': session['store'].verified_pieces,
                   'cached_pieces': len(session['store'].cache), 'last_source': session['store'].last_source,
                   'disk_cache_hits': session['store'].disk_hits}
+        result.update({'piece_length': session['meta'].piece_length, 'cached_bytes': cached_bytes,
+                       'prefetch_workers': session['store'].prefetch_workers})
         if session['pool']:
             result.update(session['pool'].stats())
         return result

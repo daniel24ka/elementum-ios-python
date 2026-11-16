@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, parse_qs, urlsplit
 from urllib.request import Request, urlopen
@@ -24,18 +25,20 @@ from elementum_py.streaming import StreamServer
 
 
 class Fixture:
-    def __init__(self):
-        self.payload = bytes(range(251)) * 3307
-        self.piece_length = 32768
+    def __init__(self, payload=None, piece_length=32768, hashes=None):
+        self.payload = payload if payload is not None else bytes(range(251)) * 3307
+        self.piece_length = piece_length
         self.info = {b'name': b'fixture.mp4', b'length': len(self.payload),
                      b'piece length': self.piece_length, b'source': b'fixture' * 3000,
-                     b'pieces': b''.join(hashlib.sha1(self.payload[offset:offset + self.piece_length]).digest()
-                                         for offset in range(0, len(self.payload), self.piece_length))}
+                     b'pieces': hashes if hashes is not None else b''.join(
+                         hashlib.sha1(self.payload[offset:offset + self.piece_length]).digest()
+                         for offset in range(0, len(self.payload), self.piece_length))}
         self.meta = Metainfo(bencode({b'info': self.info}))
         self.connections = 0
         self.corrupt_piece = False
         self.corrupt_metadata = False
         self.wrong_bitfield = False
+        self.unsorted_control = False
         self.lock = threading.Lock()
         self.servers = []
         owner = self
@@ -58,8 +61,10 @@ class Fixture:
                     if owner.wrong_bitfield:
                         bits.append(0)
                     send_message(self.request, b'\x05' + bytes(bits))
-                    send_message(self.request, b'\x14\x00' + bencode({b'm': {b'ut_metadata': 7},
-                                                                    b'metadata_size': len(owner.meta.info_bytes)}))
+                    header = bencode({b'm': {b'ut_metadata': 7}, b'metadata_size': len(owner.meta.info_bytes)})
+                    if owner.unsorted_control:
+                        header = b'd13:metadata_size' + bencode(len(owner.meta.info_bytes)) + b'1:md11:ut_metadatai7eee'
+                    send_message(self.request, b'\x14\x00' + header)
                     send_message(self.request, b'\x01')
                     incoming_metadata_id = 1
                     while True:
@@ -184,6 +189,7 @@ class ProtocolTests(unittest.TestCase):
         self.fixture.corrupt_piece = False
         self.fixture.corrupt_metadata = False
         self.fixture.wrong_bitfield = False
+        self.fixture.unsorted_control = False
 
     def test_magnet_hex_and_base32(self):
         digest = self.fixture.meta.info_hash
@@ -240,6 +246,40 @@ class ProtocolTests(unittest.TestCase):
         self.assertGreater(len(meta.info_bytes), 16384)
         self.assertEqual(meta.info_hash, self.fixture.meta.info_hash)
         self.assertEqual(meta.info_bytes, self.fixture.meta.info_bytes)
+
+    def test_unsorted_peer_handshake_metadata_stays_verified(self):
+        self.fixture.unsorted_control = True
+        meta = fetch_metadata(self.fixture.meta.info_hash, self.fixture.tcp.server_address)
+        self.assertEqual(meta.info_bytes, self.fixture.meta.info_bytes)
+        peer = PeerSession(self.fixture.meta, self.fixture.tcp.server_address)
+        try:
+            self.assertEqual(peer.fetch(0), self.fixture.payload[:self.fixture.piece_length])
+        finally:
+            peer.close()
+
+    def test_relaxed_control_decoder_still_rejects_duplicate_keys(self):
+        self.assertEqual(bdecode(b'd1:bi2e1:ai1ee', strict=False), {b'a': 1, b'b': 2})
+        with self.assertRaises(TorrentError):
+            bdecode(b'd1:ai1e1:ai2ee', strict=False)
+        with self.assertRaises(TorrentError):
+            bdecode(b'd1:bi2e1:ai1ee')
+
+    def test_dht_is_used_even_when_tracker_has_stale_peers(self):
+        import elementum_py.discovery as discovery
+        real_fetch = discovery.fetch_metadata
+        stale = [('198.51.100.' + str(number), 1234) for number in range(1, 5)]
+
+        def fetch(info_hash, address, trackers, timeout):
+            if address in stale:
+                raise TorrentError('Synthetic stale peer')
+            return real_fetch(info_hash, address, trackers, timeout)
+
+        with patch.object(discovery, 'tracker_peers', return_value=(stale, [])), \
+                patch.object(discovery, 'dht_peers', return_value=[self.fixture.tcp.server_address]) as dht, \
+                patch.object(discovery, 'fetch_metadata', side_effect=fetch):
+            meta, _ = resolve_magnet('magnet:?xt=urn:btih:' + self.fixture.meta.info_hash.hex(), timeout=4)
+            self.assertEqual(meta.info_hash, self.fixture.meta.info_hash)
+            dht.assert_called_once()
 
     def test_corrupt_metadata_rejected(self):
         self.fixture.corrupt_metadata = True
@@ -330,6 +370,97 @@ class ProtocolTests(unittest.TestCase):
             thread.join(timeout=2)
         self.assertEqual(len(results), 4)
         self.assertEqual(calls, [0])
+
+    def test_prefetch_future_does_not_retain_piece_bytes(self):
+        store = PieceStore(self.fixture.meta, peer_fetcher=lambda index: self.fixture.payload[:32768])
+        try:
+            store.prefetch([0])
+            future = store.prefetch_futures[0]
+            self.assertIsNone(future.result(timeout=2))
+            self.assertEqual(store.piece(0), self.fixture.payload[:32768])
+        finally:
+            store.close()
+
+
+class LargePieceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.payload = (bytes(range(251)) * (8 * 1024 * 1024 // 251 + 100))[:8 * 1024 * 1024 + 12345]
+        cls.fixture = Fixture(cls.payload, 8 * 1024 * 1024)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture.close()
+
+    def test_eight_mib_piece_metadata_and_cross_boundary_stream(self):
+        meta = fetch_metadata(self.fixture.meta.info_hash, self.fixture.tcp.server_address)
+        self.assertEqual(meta.piece_length, 8 * 1024 * 1024)
+        pool = PeerPool(meta, [self.fixture.tcp.server_address])
+        store = PieceStore(meta, peer_fetcher=pool.fetch, allow_webseeds=False)
+        stream = None
+        try:
+            pool.prepare(timeout=3)
+            stream = StreamServer(store, 0)
+            start, end = 8 * 1024 * 1024 - 4096, len(self.payload) - 1
+            with urlopen(Request(stream.url, headers={'Range': 'bytes={}-{}'.format(start, end)}), timeout=12) as response:
+                self.assertEqual(response.read(), self.payload[start:end + 1])
+            self.assertLessEqual(store.prefetch_workers, 2)
+        finally:
+            if stream:
+                stream.close()
+            pool.close()
+            store.close()
+
+    def test_large_piece_prefetch_concurrency_is_bounded(self):
+        info = {b'name': b'fixture.mp4', b'piece length': 32 * 1024 * 1024,
+                b'length': 1, b'pieces': hashlib.sha1(b'x').digest()}
+        meta = Metainfo(bencode({b'info': info}))
+        self.assertEqual(PieceStore(meta).prefetch_workers, 1)
+        info[b'piece length'] = 128 * 1024 * 1024
+        with self.assertRaises(TorrentError):
+            Metainfo(bencode({b'info': info}))
+
+
+class LargeFileAddressingTests(unittest.TestCase):
+    def test_24_gib_torrent_real_tcp_seek_beyond_20_gib(self):
+        length = 24 * 1024 ** 3 + 1024
+        piece_length = 16 * 1024 ** 2
+
+        class SparseZeros:
+            def __len__(self):
+                return length
+
+            def __getitem__(self, index):
+                # The synthetic peer only generates a requested 16 KiB block.
+                start, stop, step = index.indices(length)
+                if step != 1 or stop - start > piece_length:
+                    raise AssertionError('Unbounded synthetic allocation')
+                return bytes(stop - start)
+
+        digest = hashlib.sha1(bytes(piece_length)).digest()
+        hashes = digest * (length // piece_length) + hashlib.sha1(bytes(length % piece_length)).digest()
+        fixture = Fixture(SparseZeros(), piece_length, hashes)
+        pool = PeerPool(fixture.meta, [fixture.tcp.server_address])
+        store = PieceStore(fixture.meta, peer_fetcher=pool.fetch, allow_webseeds=False)
+        # Prefetch is tested separately. This case measures exact large offsets.
+        store.prefetch = lambda indexes: None
+        stream = None
+        try:
+            pool.prepare(timeout=3)
+            stream = StreamServer(store, 0)
+            start = 21 * 1024 ** 3 + 1024 ** 2
+            with urlopen(Request(stream.url, headers={'Range': 'bytes={}-{}'.format(start, start + 8191)}), timeout=20) as response:
+                self.assertEqual(response.status, 206)
+                self.assertEqual(response.headers['Content-Range'], 'bytes {}-{}/{}'.format(start, start + 8191, length))
+                self.assertEqual(response.read(), bytes(8192))
+            self.assertEqual(fixture.meta.total_length, length)
+            self.assertEqual(pool.stats()['peer_bytes_received'], piece_length)
+        finally:
+            if stream:
+                stream.close()
+            pool.close()
+            store.close()
+            fixture.close()
 
 
 if __name__ == '__main__':

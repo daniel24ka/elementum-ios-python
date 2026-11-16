@@ -26,6 +26,20 @@ Validation: local protocol/API integration tests, public Ubuntu/Sintel peer
 metadata and verified pieces, plus Sintel picture and sound on ordinary Kodi
 21.3 on a physical iPhone with HTTP webseeds disabled.
 
+Version 0.2.3 reliability update: 50 passing packaged tests, including a real
+TCP range read past 20 GiB in a synthetic 24 GiB torrent, 8 MiB piece transfer,
+80 concurrent seek requests, cancellation and repeated start/stop cycles.
+Supports v1 piece lengths up to 64 MiB with bounded prefetch concurrency;
+replaces unusable peers, discovers trackers/DHT concurrently, and prefetches
+codec indexes at the tail of the selected file. Catalog requests share a cache.
+Source searches close progress dialogs and expose useful errors without
+automatically replaying a failed torrent request. Some external search sites
+require browser verification and some swarms have no usable sources.
+On a physical iPhone, a 30,323,795,308-byte video started and advanced after a
+one-hour seek with webseeds disabled. This verifies start/seek/stop, not an
+entire movie playthrough. Another 2.4 GB source timed out during startup;
+availability and peer transfer quality still vary by source.
+
 Not yet equivalent to the original native engine: Trakt/SIMKL integrations,
 all maintenance/API routes, full multi-torrent download/seeding management,
 uTP/MSE, BitTorrent v2 and automatic episode sequencing. Do not describe this

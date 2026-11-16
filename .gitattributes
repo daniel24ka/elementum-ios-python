@@ -1,0 +1,4 @@
+*.zip binary
+*.sha256 -text
+*.md5 -text
+repo/addons.xml -text

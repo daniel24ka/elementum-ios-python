@@ -59,7 +59,7 @@ class StreamServer:
 
             def serve(self, send_body):
                 expected_path = '/' + owner.token + '/video' + owner.extension
-                if not hmac.compare_digest(self.path, expected_path):
+                if not self.path.isascii() or not hmac.compare_digest(self.path, expected_path):
                     self.send_error(404)
                     return
                 size = owner.store.meta.files[owner.file_index]['length']

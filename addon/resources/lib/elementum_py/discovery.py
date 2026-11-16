@@ -14,6 +14,8 @@ import select
 import socket
 import struct
 import time
+import threading
+from collections import Counter
 from urllib.parse import parse_qs, quote_from_bytes, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
@@ -96,7 +98,7 @@ def http_tracker(url, info_hash, identity, left=0, timeout=8, allow_local=False)
         payload = response.read(1024 * 1024 + 1)
     if len(payload) > 1024 * 1024:
         raise TorrentError('Tracker response too large')
-    reply = bdecode(payload)
+    reply = bdecode(payload, strict=False)
     if not isinstance(reply, dict) or b'failure reason' in reply:
         raise TorrentError('Tracker rejected the announce')
     peers = reply.get(b'peers', b'')
@@ -219,7 +221,7 @@ def dht_peers(info_hash, timeout=12, bootstrap=BOOTSTRAP, allow_local=False, can
                 continue
             packet, sender = channel.recvfrom(65536)
             try:
-                reply = bdecode(packet)
+                reply = bdecode(packet, strict=False)
                 transaction = reply.get(b't')
                 if transaction not in pending or pending[transaction][0] != sender:
                     continue
@@ -286,7 +288,7 @@ def fetch_metadata(info_hash, address, trackers=(), timeout=10):
             message = read_message(channel, deadline)
             if len(message) < 3 or message[:2] != b'\x14\x00':
                 continue
-            header = bdecode(message[2:])
+            header = bdecode(message[2:], strict=False)
             metadata_size = header.get(b'metadata_size')
             extension_id = header.get(b'm', {}).get(b'ut_metadata')
             if (type(metadata_size) is not int or not 1 <= metadata_size <= 2 * 1024 * 1024 or
@@ -305,7 +307,7 @@ def fetch_metadata(info_hash, address, trackers=(), timeout=10):
             message = read_message(channel, deadline)
             if len(message) < 3 or message[:2] != b'\x14\x01':
                 continue
-            header, end = bdecode(message[2:], prefix=True)
+            header, end = bdecode(message[2:], prefix=True, strict=False)
             if not isinstance(header, dict):
                 raise TorrentError('Malformed metadata response')
             kind, index = header.get(b'msg_type'), header.get(b'piece')
@@ -332,42 +334,76 @@ def fetch_metadata(info_hash, address, trackers=(), timeout=10):
 
 
 def resolve_magnet(uri, timeout=45, cancel=None, explicit_peers=(), allow_local=False,
-                   use_dht=True, bootstrap=BOOTSTRAP):
+                   use_dht=True, bootstrap=BOOTSTRAP, diagnostics=None):
     parsed = parse_magnet(uri)
+    if cancel is not None and cancel.is_set():
+        raise TorrentError('Cancelled')
     info_hash = parsed['info_hash']
     trackers = parsed['trackers'] or list(PUBLIC_TRACKERS)
     deadline = time.monotonic() + timeout
-    peers = list(explicit_peers)
-    found, _ = tracker_peers(trackers, info_hash, timeout=min(8, timeout), allow_local=allow_local, cancel=cancel)
-    peers.extend(found)
-    if use_dht and len(peers) < 4 and time.monotonic() < deadline:
-        peers.extend(dht_peers(info_hash, timeout=min(10, deadline - time.monotonic()),
-                               bootstrap=bootstrap, allow_local=allow_local, cancel=cancel))
-    peers = list(dict.fromkeys(peers))[:200]
-    random.SystemRandom().shuffle(peers)
-    peers = peers[:80]
+    peers, scheduled = [], set()
+    errors = Counter()
+    stopped = threading.Event()
+
+    class Cancellation:
+        def is_set(self):
+            return stopped.is_set() or bool(cancel is not None and cancel.is_set())
+
+    combined_cancel = Cancellation()
+    discovery = concurrent.futures.ThreadPoolExecutor(max_workers=2)
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=6)
-    futures = []
+    futures = {}
+
+    def metadata(address):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or combined_cancel.is_set():
+            raise TorrentError('Cancelled')
+        return fetch_metadata(info_hash, address, trackers, min(8, remaining))
+
+    def schedule(addresses):
+        candidates = list(dict.fromkeys(addresses))
+        random.SystemRandom().shuffle(candidates)
+        for address in candidates:
+            if address not in peers and len(peers) < 200:
+                peers.append(address)
+            if address not in scheduled and len(scheduled) < 80:
+                scheduled.add(address)
+                futures[executor.submit(metadata, address)] = 'metadata'
+
     try:
-        for address in peers:
-            if cancel is not None and cancel.is_set():
-                raise TorrentError('Cancelled')
-            futures.append(executor.submit(fetch_metadata, info_hash, address, trackers,
-                                           min(8, max(0.1, deadline - time.monotonic()))))
+        schedule(explicit_peers)
+        futures[discovery.submit(tracker_peers, trackers, info_hash, timeout=min(8, timeout),
+                                 allow_local=allow_local, cancel=combined_cancel)] = 'tracker'
+        if use_dht:
+            futures[discovery.submit(dht_peers, info_hash, timeout=min(12, timeout), bootstrap=bootstrap,
+                                     allow_local=allow_local, cancel=combined_cancel)] = 'dht'
         while futures and time.monotonic() < deadline:
             if cancel is not None and cancel.is_set():
                 raise TorrentError('Cancelled')
-            done, pending = concurrent.futures.wait(futures, timeout=0.2,
+            done, _ = concurrent.futures.wait(futures, timeout=0.2,
                                                    return_when=concurrent.futures.FIRST_COMPLETED)
-            futures = list(pending)
             for future in done:
+                kind = futures.pop(future)
                 try:
-                    meta = future.result()
-                    return meta, peers
-                except (OSError, TorrentError, ValueError):
-                    continue
-        raise TorrentError('No peer supplied verified magnet metadata before the deadline')
+                    result = future.result()
+                    if kind == 'metadata':
+                        if diagnostics is not None:
+                            diagnostics.update({'candidate_peers': len(peers), 'metadata_verified': True})
+                        return result, peers
+                    if kind == 'tracker':
+                        result, tracker_errors = result
+                        errors.update(tracker_errors)
+                    schedule(result)
+                except (OSError, TorrentError, ValueError) as error:
+                    errors[type(error).__name__ + ': ' + str(error)[:100]] += 1
+        if diagnostics is not None:
+            diagnostics.update({'candidate_peers': len(peers), 'metadata_verified': False, 'errors': dict(errors)})
+        if not peers:
+            raise TorrentError('No torrent peers found from trackers or DHT; try another source')
+        raise TorrentError('Found {} peers but none supplied usable torrent metadata; try another source'.format(len(peers)))
     finally:
+        stopped.set()
         for future in futures:
             future.cancel()
         executor.shutdown(wait=False)
+        discovery.shutdown(wait=False)

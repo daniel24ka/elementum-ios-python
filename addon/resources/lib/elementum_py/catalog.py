@@ -26,9 +26,19 @@ class Catalog:
         self.language = language
         self.transport = transport
         self.lock = threading.Lock()
+        self.request_locks = [threading.Lock() for _ in range(32)]
+        self.cache_write_errors = 0
         os.makedirs(cache_dir, exist_ok=True)
 
     def api(self, path, params=None, ttl=600):
+        key = (path + json.dumps(params or {}, sort_keys=True)).encode('utf-8')
+        bucket = hashlib.sha256(key).digest()[0] % len(self.request_locks)
+        # A bounded lock stripe prevents duplicate requests for the same item.
+        # Different catalog entries can still be loaded concurrently.
+        with self.request_locks[bucket]:
+            return self._api(path, params, ttl)
+
+    def _api(self, path, params=None, ttl=600):
         if not path.startswith('/') or '://' in path or '..' in path:
             raise CatalogError('Invalid catalog path')
         params = dict(params or {})
@@ -67,11 +77,16 @@ class Catalog:
                     raise CatalogError('TMDB connection or response failed') from None
             if result is None:
                 raise CatalogError('TMDB authentication failed; update the API key in settings')
+        if not isinstance(result, dict):
+            raise CatalogError('Catalog returned an invalid response')
         with self.lock:
             temporary = filename + '.tmp'
-            with open(temporary, 'w', encoding='utf-8') as handle:
-                json.dump(result, handle)
-            os.replace(temporary, filename)
+            try:
+                with open(temporary, 'w', encoding='utf-8') as handle:
+                    json.dump(result, handle)
+                os.replace(temporary, filename)
+            except OSError:
+                self.cache_write_errors += 1
         return result
 
     def details(self, kind, identifier):
@@ -88,6 +103,9 @@ class Catalog:
         year = int(date[:4]) if date[:4].isdigit() else 0
         titles = {'original': original, 'source': original, 'en': original,
                   self.language[:2].lower(): localized}
+        if self.language[:2].lower() != 'en' and item.get('original_language') not in (None, 'en'):
+            english = self.api('/{}/{}'.format(kind, identifier), {'language': 'en-US'}, ttl=86400)
+            titles['en'] = english.get('title') or english.get('name') or original
         alternate = item.get('alternative_titles', {})
         for title in alternate.get('titles', alternate.get('results', [])):
             country = title.get('iso_3166_1', '').lower()

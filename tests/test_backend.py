@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -11,6 +12,7 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'addon/resources/lib'))
 from elementum_py.backend import Backend, BackendServer, Redirect
 from elementum_py.catalog import Catalog
+from elementum_py.core import TorrentError
 
 
 class FakeKodi:
@@ -18,6 +20,7 @@ class FakeKodi:
         self.backend = None
         self.messages = []
         self.last_payload = None
+        self.closed_progress = 0
 
     def setting(self, key):
         return ''
@@ -53,7 +56,7 @@ class FakeKodi:
         pass
 
     def progress_close(self):
-        pass
+        self.closed_progress += 1
 
     def error(self, kind, message):
         self.messages.append(kind)
@@ -63,6 +66,12 @@ class FakeKodi:
 
     def open_settings(self, addon_id):
         self.messages.append(addon_id)
+
+    def companion(self, addon_id):
+        self.messages.append(addon_id)
+
+    def has_addon(self, addon_id):
+        return False
 
 
 class FakeEngine:
@@ -177,6 +186,65 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result['items'][0]['info']['title'], 'Sintel')
         text = Path(self.folder.name, 'library/movie/81747.strm').read_text(encoding='utf-8')
         self.assertIn('/movie/81747/play', text)
+
+    @unittest.skipUnless(hasattr(Backend, 'announce_next_episode'), 'Development preview integration')
+    def test_companion_menu_uses_official_addons(self):
+        self.assertEqual(len(self.get('/integrations')['items']), 3)
+        self.get('/integrations/simkl')
+        self.assertEqual(self.kodi.messages[-1], 'script.simkl')
+
+    @unittest.skipUnless(hasattr(Backend, 'announce_next_episode'), 'Development preview integration')
+    def test_episode_autoplay_resolves_a_source(self):
+        result = self.backend.route('/show/1/season/1/episode/2/autoplay', {})
+        self.assertIsInstance(result, Redirect)
+        self.assertEqual(result.status, 300)
+        self.assertIn('show=1', result.url)
+        self.assertIn('episode=2', result.url)
+        self.assertIn('magnet', result.url)
+
+    def test_search_always_closes_progress(self):
+        self.get('/search?q=Sintel')
+        self.assertEqual(self.kodi.closed_progress, 1)
+        self.kodi.abort_requested = lambda: True
+        with self.assertRaises(TorrentError):
+            self.backend.links('search', {'query': 'Cancelled'}, 'Cancelled')
+        self.assertEqual(self.kodi.closed_progress, 2)
+        self.assertEqual(self.backend.callbacks, {})
+
+    def test_missing_provider_callback_is_timeout_not_no_links(self):
+        self.kodi.execute_addon = lambda *args: None
+        with self.assertRaisesRegex(TorrentError, 'timed out'):
+            self.backend.search_providers('search', {'query': 'Fixture'}, timeout=0.05)
+        self.assertTrue(self.backend.last_search['timed_out'])
+        self.assertEqual(self.backend.callbacks, {})
+
+    def test_concurrent_catalog_requests_share_one_fetch(self):
+        calls = []
+
+        def slow(path, params):
+            calls.append(path)
+            time.sleep(0.03)
+            return {'id': 999, 'title': 'Fixture'}
+
+        catalog = Catalog(self.folder.name + '/concurrent', transport=slow)
+        results = []
+        workers = [threading.Thread(target=lambda: results.append(catalog.api('/movie/999'))) for _ in range(12)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=2)
+        self.assertEqual(len(results), 12)
+        self.assertEqual(calls, ['/movie/999'])
+
+    def test_non_english_interface_keeps_an_english_provider_title(self):
+        def titles(path, params):
+            return {'id': 999, 'original_title': 'Titre original', 'original_language': 'fr',
+                    'title': 'English title' if params['language'] == 'en-US' else 'Localized title'}
+
+        catalog = Catalog(self.folder.name + '/titles', language='he-IL', transport=titles)
+        payload, _ = catalog.search_payload('movie', 999)
+        self.assertEqual(payload['titles']['en'], 'English title')
+        self.assertEqual(payload['titles']['original'], 'Titre original')
 
 
 if __name__ == '__main__':

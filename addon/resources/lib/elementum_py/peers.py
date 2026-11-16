@@ -5,6 +5,7 @@ import random
 import struct
 import threading
 import time
+from collections import Counter
 
 from .core import TorrentError, bdecode, bencode
 from .discovery import compact_peers, handshake, read_message, send_message
@@ -26,6 +27,7 @@ class PeerSession:
         self.choked = True
         self.closed = False
         self.extension_ids = {}
+        self.request_limit = 16
         self.new_peers = []
         self.pieces = 0
         self.bytes_received = 0
@@ -84,12 +86,15 @@ class PeerSession:
                 raise TorrentError('Malformed extended message')
             extension = message[1]
             if extension == 0:
-                header = bdecode(message[2:])
+                header = bdecode(message[2:], strict=False)
                 if not isinstance(header, dict) or not isinstance(header.get(b'm', {}), dict):
                     raise TorrentError('Malformed extension handshake')
                 self.extension_ids = header.get(b'm', {})
+                request_limit = header.get(b'reqq')
+                if type(request_limit) is int and request_limit > 0:
+                    self.request_limit = min(16, request_limit)
             elif extension == 1:
-                header, _ = bdecode(message[2:], prefix=True)
+                header, _ = bdecode(message[2:], prefix=True, strict=False)
                 remote_id = self.extension_ids.get(b'ut_metadata', 0)
                 if header.get(b'msg_type') == 0 and type(remote_id) is int and 1 <= remote_id <= 255:
                     index = header.get(b'piece')
@@ -101,7 +106,7 @@ class PeerSession:
                         reply = bencode({b'msg_type': 2, b'piece': index if type(index) is int else -1})
                     send_message(self.channel, bytes((20, remote_id)) + reply)
             elif extension == 2 and not self.meta.private:
-                header = bdecode(message[2:])
+                header = bdecode(message[2:], strict=False)
                 if isinstance(header, dict):
                     self.new_peers.extend(compact_peers(header.get(b'added', b'')))
                     self.new_peers = list(dict.fromkeys(self.new_peers))[:80]
@@ -124,7 +129,7 @@ class PeerSession:
                         raise MissingPiece('Peer does not have requested piece')
                     if not self.choked:
                         for offset, length in wanted.items():
-                            if len(pending) >= 16:
+                            if len(pending) >= self.request_limit:
                                 break
                             if offset not in blocks and offset not in pending:
                                 send_message(self.channel, struct.pack('!BIII', 6, index, offset, length))
@@ -171,24 +176,30 @@ class PeerPool:
         self.cancel = cancel or threading.Event()
         self.addresses = list(dict.fromkeys(addresses))[:200]
         random.SystemRandom().shuffle(self.addresses)
-        self.addresses = self.addresses[:100]
+        self.addresses = self.addresses[:200]
         self.sessions = []
         self.lock = threading.Lock()
+        self.condition = threading.Condition(self.lock)
+        self.connecting = 0
         self.ready = threading.Event()
         self.connectors = []
         self.closed = False
         self.errors = 0
+        self.error_details = Counter()
 
     def prepare(self, timeout=15):
         queued = list(self.addresses)
 
         def worker():
             while not self.closed and not self.cancel.is_set():
-                with self.lock:
-                    healthy = sum(not peer.closed for peer in self.sessions)
-                    if not queued or healthy >= 8:
+                with self.condition:
+                    while (queued and not self.closed and not self.cancel.is_set() and
+                           sum(not peer.closed for peer in self.sessions) + self.connecting >= 8):
+                        self.condition.wait(0.5)
+                    if not queued or self.closed or self.cancel.is_set():
                         return
                     address = queued.pop(0)
+                    self.connecting += 1
                 try:
                     session = PeerSession(self.meta, address, self.cancel)
                     with self.lock:
@@ -197,8 +208,14 @@ class PeerPool:
                             return
                         self.sessions.append(session)
                         self.ready.set()
-                except (OSError, TorrentError, ValueError):
-                    self.errors += 1
+                except (OSError, TorrentError, ValueError) as error:
+                    with self.condition:
+                        self.errors += 1
+                        self.error_details[type(error).__name__ + ': ' + str(error)[:100]] += 1
+                finally:
+                    with self.condition:
+                        self.connecting -= 1
+                        self.condition.notify_all()
 
         for _ in range(min(6, len(queued))):
             thread = threading.Thread(target=worker, daemon=True)
@@ -209,7 +226,9 @@ class PeerPool:
             if self.cancel.is_set() or time.monotonic() >= deadline or not any(t.is_alive() for t in self.connectors):
                 raise TorrentError('No usable TCP peers connected')
 
-    def fetch(self, index, timeout=20):
+    def fetch(self, index, timeout=None):
+        if timeout is None:
+            timeout = min(90, max(20, 6 + self.meta.piece_size(index) / (256 * 1024)))
         deadline = time.monotonic() + timeout
         attempted = set()
         while time.monotonic() < deadline and not self.closed and not self.cancel.is_set():
@@ -227,9 +246,15 @@ class PeerPool:
                 continue
             attempted.add(peer)
             try:
-                return peer.fetch(index, timeout=min(10, max(0.1, deadline - time.monotonic())))
-            except (OSError, TorrentError):
-                self.errors += 1
+                return peer.fetch(index, timeout=min(45, max(0.1, deadline - time.monotonic())))
+            except (OSError, TorrentError) as error:
+                # Replace peers that cannot supply the selected file instead of
+                # keeping eight healthy connections to the wrong pieces forever.
+                peer.close()
+                with self.condition:
+                    self.errors += 1
+                    self.error_details[type(error).__name__ + ': ' + str(error)[:100]] += 1
+                    self.condition.notify_all()
             finally:
                 peer.busy.release()
         raise TorrentError('No connected peer supplied a valid requested piece')
@@ -238,12 +263,14 @@ class PeerPool:
         with self.lock:
             return {'connected_peers': sum(not peer.closed for peer in self.sessions),
                     'peer_bytes_received': sum(peer.bytes_received for peer in self.sessions),
-                    'peer_errors': self.errors}
+                    'peer_errors': self.errors, 'peer_error_details': dict(self.error_details.most_common(6)),
+                    'connecting_peers': self.connecting}
 
     def close(self):
         self.closed = True
-        with self.lock:
+        with self.condition:
             sessions = list(self.sessions)
+            self.condition.notify_all()
         for peer in sessions:
             peer.close()
         for thread in self.connectors:

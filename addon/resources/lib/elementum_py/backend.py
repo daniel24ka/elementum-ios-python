@@ -64,6 +64,10 @@ class Backend:
         providers = self.providers()
         if not providers:
             raise TorrentError('Enable Elementum Burst under Program add-ons to search for sources')
+        report = {'provider_count': len(providers), 'callbacks_received': 0, 'results': 0,
+                  'timed_out': False, 'cancelled': False}
+        self.last_search = report
+        started = time.monotonic()
         registrations = []
         try:
             for addon in providers[:8]:
@@ -83,6 +87,7 @@ class Backend:
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 if self.kodi.abort_requested():
+                    report['cancelled'] = True
                     raise TorrentError('Search cancelled')
                 if all(entry['ready'].is_set() for _, entry in registrations):
                     break
@@ -104,8 +109,14 @@ class Backend:
                     seen.add(key)
                     combined.append(result)
             combined.sort(key=lambda item: (self.number(item.get('sort_balance')), self.number(item.get('seeds'))), reverse=True)
+            report['callbacks_received'] = sum(entry['ready'].is_set() for _, entry in registrations)
+            report['results'] = len(combined[:200])
+            report['timed_out'] = report['callbacks_received'] < len(registrations)
+            if not combined and report['callbacks_received'] == 0:
+                raise TorrentError('Source search timed out; check Burst and try again')
             return combined[:200]
         finally:
+            report['elapsed_seconds'] = round(time.monotonic() - started, 2)
             with self.callback_lock:
                 for token, _ in registrations:
                     self.callbacks.pop(token, None)
@@ -128,18 +139,26 @@ class Backend:
 
     def links(self, method, payload, title, params=None):
         self.kodi.progress('Searching Elementum providers')
-        results = self.search_providers(method, payload)
-        items = []
-        for result in results:
-            item = list_item(result.get('name') or title,
-                             plugin_url('/play', uri=result['uri'], query=title, **(params or {})),
-                             playable=True, label2='{} seeds | {} | {}'.format(
-                                 self.number(result.get('seeds')), result.get('size', ''), result.get('provider', '')))
-            item['info'] = {'title': result.get('name') or title, 'plot': item['label2'], 'mediatype': 'video'}
-            items.append(item)
-        if not items:
-            self.kodi.notify('No links were found')
-        return view('files', items)
+        try:
+            results = self.search_providers(method, payload)
+            items = []
+            for result in results:
+                item = list_item(result.get('name') or title,
+                                 plugin_url('/play', uri=result['uri'], query=title, **(params or {})),
+                                 playable=True, label2='{} seeds | {} | {}'.format(
+                                     self.number(result.get('seeds')), result.get('size', ''), result.get('provider', '')))
+                item['info'] = {'title': result.get('name') or title, 'plot': item['label2'], 'mediatype': 'video'}
+                items.append(item)
+            if not items:
+                health = getattr(self.kodi, 'provider_health', lambda: {})()
+                if health.get('blocked_domains'):
+                    self.kodi.notify('No sources returned. Some search sites require browser verification.')
+                else:
+                    self.kodi.notify('No sources returned for this title. Try another title or source.')
+                self.last_search.update(health)
+            return view('files', items)
+        finally:
+            self.kodi.progress_close()
 
     def catalog_list(self, path, query):
         kind = 'movie' if path.startswith('/movies') else 'tv'
@@ -228,8 +247,11 @@ class Backend:
                 ('LOCALIZE[30239]', '/provider/', False), ('LOCALIZE[30393]', '/status', True),
                 ('LOCALIZE[30579]', '/settings/plugin.video.elementum', True))])
         if path == '/versions':
-            return {'version': '0.2.0-python-development', 'user_agent': 'ElementumPython/0.2',
+            return {'version': '0.2.3-python', 'user_agent': 'ElementumPython/0.2',
                     'backend': 'python', 'native_engine': False}
+        if path == '/diagnostics':
+            return {'torrent': self.engine.stats(), 'source_search': getattr(self, 'last_search', {}),
+                    'metadata': getattr(self.engine, 'last_metadata_diagnostics', {})}
         if path.startswith(('/movies', '/shows')):
             return self.catalog_list(path, query)
         if path == '/search':
