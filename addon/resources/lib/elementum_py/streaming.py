@@ -4,6 +4,7 @@ import hmac
 import secrets
 import threading
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .core import TorrentError
@@ -43,6 +44,8 @@ class StreamServer:
                  '.avi': 'video/x-msvideo', '.webm': 'video/webm', '.mov': 'video/quicktime', '.ts': 'video/mp2t'}
         self.extension = extension if extension in types else '.mp4'
         self.mime_type = types.get(extension, 'application/octet-stream')
+        self.metrics_lock = threading.Lock()
+        self.metrics = {'requests':0,'delivered_bytes':0,'source_errors':0,'last_source_error':0}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -63,6 +66,8 @@ class StreamServer:
                     self.send_error(404)
                     return
                 size = owner.store.meta.files[owner.file_index]['length']
+                with owner.metrics_lock:
+                    owner.metrics['requests'] += 1
                 try:
                     start, end, status = parse_range(self.headers.get('Range'), size)
                 except (TorrentError, ValueError):
@@ -78,6 +83,7 @@ class StreamServer:
                     parts = owner.store.read(owner.file_index, start, end - start + 1)
                     first = next(parts) if send_body else b''
                 except (OSError, TorrentError):
+                    owner.source_error()
                     self.send_error(503, 'Torrent source unavailable')
                     return
                 self.send_response(status)
@@ -92,10 +98,21 @@ class StreamServer:
                 if send_body:
                     try:
                         self.wfile.write(first)
+                        with owner.metrics_lock:
+                            owner.metrics['delivered_bytes'] += len(first)
                         for content in parts:
                             self.wfile.write(content)
-                    except (OSError, TorrentError):
+                            with owner.metrics_lock:
+                                owner.metrics['delivered_bytes'] += len(content)
+                    except TorrentError:
+                        owner.source_error()
                         self.close_connection = True
+                    except OSError:
+                        # Kodi closes old range sockets during seeks; that is
+                        # not a failed torrent and must not trigger recovery.
+                        self.close_connection = True
+                    finally:
+                        parts.close()
 
         class Server(ThreadingHTTPServer):
             daemon_threads = True
@@ -104,6 +121,15 @@ class StreamServer:
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
         self.url = 'http://127.0.0.1:{}/{}/video{}'.format(self.httpd.server_port, self.token, self.extension)
+
+    def source_error(self):
+        with self.metrics_lock:
+            self.metrics['source_errors'] += 1
+            self.metrics['last_source_error'] = time.monotonic()
+
+    def stats(self):
+        with self.metrics_lock:
+            return dict(self.metrics)
 
     def close(self):
         self.httpd.shutdown()

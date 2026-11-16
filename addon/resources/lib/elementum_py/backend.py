@@ -17,6 +17,7 @@ from .engine import TorrentEngine
 from .downloads import Downloads
 from .version import VERSION
 from .integrations import COMPANIONS, playback_metadata, upnext_payload, upnext_notification
+from .source_health import SourceHealth, resolution
 
 
 class Redirect:
@@ -50,6 +51,8 @@ class Backend:
         self.pending_resume = 0
         self.playback_query = {}
         os.makedirs(profile, exist_ok=True)
+        self.source_health = SourceHealth(profile)
+        self.recovery_chains = OrderedDict()
         try:
             with open(self.state_path, encoding='utf-8') as handle:
                 loaded = json.load(handle)
@@ -120,6 +123,8 @@ class Backend:
                     seen.add(key)
                     combined.append(result)
             combined.sort(key=lambda item: (self.number(item.get('sort_balance')), self.number(item.get('seeds'))), reverse=True)
+            if self.kodi.setting('source_health') != 'false':
+                combined = self.source_health.rank(combined)
             report['callbacks_received'] = sum(entry['ready'].is_set() for _, entry in registrations)
             report['results'] = len(combined[:200])
             report['timed_out'] = report['callbacks_received'] < len(registrations)
@@ -271,6 +276,7 @@ class Backend:
                 ('LOCALIZE[30239]', '/provider/', False), ('LOCALIZE[30393]', '/status', True),
                 ('Trakt, SIMKL and Up Next', '/integrations/', False),
                 ('Downloads', '/downloads/', False), ('Web interface', '/web', True),
+                ('Optimize playback buffer', '/playback/cache', True),
                 ('LOCALIZE[30579]', '/settings/plugin.video.elementum', True))])
         if path == '/versions':
             return {'version': VERSION, 'user_agent': 'ElementumPython/0.3',
@@ -360,6 +366,11 @@ class Backend:
             self.pending_resume = 0
             if query.get('resume') != '0' and previous and previous.get('position', 0) > 15 and self.kodi.resume(previous['position']):
                 self.pending_resume = previous['position']
+            chain = self.recovery_chains.get(query.get('_recovery', ''))
+            if chain and chain.get('expected') != self.source_identity(uri):
+                chain = None
+            if chain and chain.get('expected') == self.source_identity(uri):
+                self.pending_resume = chain['position']
             metadata = {'label': title, 'label2': '', 'info': {'title': title, 'mediatype': 'video'}, 'art': {}}
             try:
                 metadata = playback_metadata(self.catalog, query) or metadata
@@ -379,6 +390,17 @@ class Backend:
             if session and session['stream'].url == prepared['url']:
                 session['playback_query'] = playback_query
                 session['metadata'] = metadata
+                chain_id = query.get('_recovery') if chain else secrets.token_hex(12)
+                if not chain:
+                    chain = {'attempted':set(), 'count':0, 'when':time.monotonic()}
+                    self.recovery_chains[chain_id] = chain
+                    while len(self.recovery_chains) > 4:
+                        self.recovery_chains.popitem(last=False)
+                chain['attempted'].add(self.source_identity(uri))
+                session['recovery_chain'] = chain_id
+                session['peer_only'] = query.get('peer_only') == '1'
+                if chain.get('count'):
+                    self.last_recovery['midstream'] = {'attempt':chain['count'],'resume_seconds':round(chain['position'],2)}
             history = {'uri': uri, 'title': prepared['title'], 'file_index': prepared['file_index'],
                        'when': time.time(), 'position': 0, 'duration': 0, 'media': playback_query}
             if previous:
@@ -447,11 +469,15 @@ class Backend:
             safe_id = identity if re.fullmatch(r'[a-f0-9]{40}', identity) else 'torrent-url'
             record = {'info_hash': safe_id, 'status': 'preparing'}
             self.last_recovery['attempts'].append(record)
+            attempt_started = time.monotonic()
             try:
                 prepared = self.engine.prepare(source, index, title, peer_only=peer_only)
+                self.source_health.record(source,True,time.monotonic()-attempt_started)
                 record['status'] = 'ready'
                 return prepared
             except (TorrentError, OSError) as error:
+                if 'cancel' not in str(error).lower() and not self.kodi.abort_requested():
+                    self.source_health.record(source,False)
                 record.update(status='failed', error_type=type(error).__name__)
                 self.last_failure = dict(getattr(self.engine, 'last_preparation', {}))
                 raise
@@ -468,9 +494,6 @@ class Backend:
             original_id = self.source_identity(uri)
             original_name = next((item.get('name', '') for item in sources
                                   if self.source_identity(item['uri']) == original_id), uri)
-            def resolution(name):
-                found = re.search(r'(?<!\d)(480|576|720|1080|2160|4320)p\b', str(name or ''), re.I)
-                return int(found[1]) if found else 0
             maximum = resolution(original_name)
             attempted = {original_id}
             last_error = original
@@ -497,6 +520,38 @@ class Backend:
                         raise
                     last_error = error
             raise last_error from None
+
+    def recovery_request(self, session, position):
+        """Queue at most two same-title replacements after a confirmed stall."""
+        if (self.kodi.setting('playback_recovery') == 'false' or self.shutdown.is_set()
+                or self.kodi.abort_requested() or self.engine.active is not session
+                or session.get('offline') or not 15 <= position <= 86400):
+            return None
+        query = session.get('playback_query') or {}
+        if not (query.get('tmdb') and query.get('type') == 'movie' or
+                query.get('show') and query.get('episode') is not None):
+            return None  # A free-text magnet must never select a different film.
+        chain_id = session.get('recovery_chain')
+        chain = self.recovery_chains.get(chain_id)
+        if not chain or chain['count'] >= 2 or time.monotonic()-chain['when'] > 1200:
+            return None
+        with self.source_lock:
+            remembered = self.source_groups.get(self.source_key(session['title'],query))
+            sources = list(remembered[1]) if remembered and time.monotonic()-remembered[0] < 1200 else []
+        current = self.source_identity(session['uri'])
+        maximum = resolution(next((source.get('name','') for source in sources
+                                   if self.source_identity(source['uri']) == current), ''))
+        for source in self.source_health.rank(sources):
+            key = self.source_identity(source['uri'])
+            if key in chain['attempted'] or key == current or (maximum and resolution(source.get('name')) > maximum):
+                continue
+            chain['attempted'].add(key)
+            chain.update(count=chain['count']+1,position=float(position),expected=key)
+            self.source_health.record(session['uri'],False)
+            self.last_recovery['midstream'] = {'attempt':chain['count'],'resume_seconds':round(position,2)}
+            return plugin_url('/play',uri=source['uri'],query=session['title'],resume='0',fallback='0',
+                              _recovery=chain_id,peer_only='1' if session.get('peer_only') else '0',**query)
+        return None
 
     def download_route(self, path, query):
         if path == '/downloads':
@@ -576,6 +631,9 @@ class Backend:
             self.play_lock.release()
 
     def management_route(self, path, query):
+        if path == '/playback/cache':
+            self.kodi.optimize_cache()
+            return view('', [])
         if path in ('/torrents', '/torrents/list'):
             stats = self.engine.stats()
             if path.endswith('/list'):

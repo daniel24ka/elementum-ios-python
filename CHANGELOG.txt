@@ -1,3 +1,13 @@
+0.3.3
+- Add continuous, adaptive, memory-bounded verified torrent read-ahead.
+- Prioritize new seek windows and retain foreground upload-slot reservations.
+- Prefer locally reliable sources within the existing quality order.
+- Recover persistent stalls with bounded same-title replacement and resume.
+- Guard pauses, manual stops, seeks, near-end playback and unidentified magnets.
+- Add optional native Kodi cache optimization with a prior-settings backup.
+- Restore the active read-ahead window after closed codec metadata probes.
+- Expose actual buffer/HTTP metrics and validate 124 packaged tests.
+
 0.3.2
 - Fix native subtitle search dispatch: subtitle results replace video menus.
 - Add Hebrew-prioritized movie/episode subtitle search and actual downloads.

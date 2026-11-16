@@ -319,6 +319,18 @@ class PieceStore:
         self.prefetch_executor = None
         self.prefetch_futures = {}
         self.prefetch_workers = max(1, min(3, max_cache_bytes // meta.piece_length))
+        self.network_bytes = 0
+        self.network_seconds = 0
+        self.window = ()
+        self.window_generation = 0
+        self.read_sequence = 0
+        self.readers = {}
+        self.read_cursor = None
+        self.stream_file = None
+        self.bitrate = 0
+        self.caching = False
+        self.readahead_event = threading.Event()
+        self.readahead_thread = None
         if cache_dir:
             os.makedirs(cache_dir, exist_ok=True)
 
@@ -347,6 +359,7 @@ class PieceStore:
                     return self.cache[index]
             return self.piece(index)
         try:
+            started = time.monotonic()
             errors = []
             content = None
             from_disk = False
@@ -393,6 +406,9 @@ class PieceStore:
                     handle.write(content)
                 os.replace(temporary, filename)
             with self.lock:
+                if not from_disk:
+                    self.network_bytes += len(content)
+                    self.network_seconds += max(.001, time.monotonic()-started)
                 self.cache[index] = content
                 while len(self.cache) > self.limit:
                     self.cache.popitem(last=False)
@@ -425,9 +441,77 @@ class PieceStore:
             self.piece(index)
         except (TorrentError, OSError):
             pass
+        finally:
+            self.readahead_event.set()
+
+    def configure_stream(self, file_index):
+        self.stream_file = file_index
+
+    def update_playback(self, duration, caching=False):
+        if self.stream_file is None:
+            return
+        with self.lock:
+            if duration > 0:
+                self.bitrate = self.meta.files[self.stream_file]['length'] / duration
+            self.caching = caching
+        self.readahead_event.set()
+
+    def _window_at(self, position, generation):
+        from .playback_policy import read_ahead_pieces
+        with self.lock:
+            if generation in self.readers:
+                self.readers[generation] = position
+            if generation != self.window_generation or self.cancel.is_set():
+                return
+            self.read_cursor = position
+            index = position // self.meta.piece_length
+            item = self.meta.files[self.stream_file]
+            final = (item['offset']+item['length']-1)//self.meta.piece_length
+            rate = self.network_bytes/self.network_seconds if self.network_seconds else 0
+            count = read_ahead_pieces(self.meta.piece_length,self.limit,self.bitrate,rate,self.caching)
+            self.window = tuple(range(index,min(final+1,index+count)))
+            # Cancel only work that has not started. In-flight verified reads
+            # remain shared and valid; arbitrary parallel HTTP ranges still work.
+            for old, future in list(self.prefetch_futures.items()):
+                if old not in self.window and future.cancel():
+                    self.prefetch_futures.pop(old,None)
+            if self.readahead_thread is None:
+                self.readahead_thread = threading.Thread(target=self._read_ahead,daemon=True)
+                self.readahead_thread.start()
+        self.readahead_event.set()
+
+    def _read_ahead(self):
+        while not self.cancel.is_set():
+            self.readahead_event.wait(.5)
+            self.readahead_event.clear()
+            with self.lock:
+                window = self.window
+            self.prefetch(window)
+
+    def buffer_stats(self):
+        with self.lock:
+            end = self.read_cursor
+            if end is not None and self.stream_file is not None:
+                item = self.meta.files[self.stream_file]
+                maximum = item['offset']+item['length']
+                while end < maximum:
+                    index,inside = divmod(end,self.meta.piece_length)
+                    content = self.cache.get(index)
+                    if content is None:
+                        break
+                    end += min(len(content)-inside,maximum-end)
+            ahead = max(0,end-self.read_cursor) if end is not None else 0
+            return {'cache_limit_bytes':self.limit*self.meta.piece_length,
+                    'ahead_verified_bytes':ahead,'ahead_seconds_estimate':round(ahead/self.bitrate,2) if self.bitrate else None,
+                    'target_ahead_pieces':len(self.window),'read_generation':self.read_sequence,
+                    'network_verified_bytes':self.network_bytes,
+                    'verified_rate':round(self.network_bytes/self.network_seconds) if self.network_seconds else 0}
 
     def close(self):
         self.cancel.set()
+        self.readahead_event.set()
+        if self.readahead_thread and self.readahead_thread is not threading.current_thread():
+            self.readahead_thread.join(timeout=2)
         if self.prefetch_executor is not None:
             for future in self.prefetch_futures.values():
                 future.cancel()
@@ -439,12 +523,34 @@ class PieceStore:
             raise TorrentError('Read exceeds selected file')
         position = item['offset'] + offset
         remaining = length
-        while remaining:
-            index, inside = divmod(position, self.meta.piece_length)
-            content = self.piece(index)
-            size = min(remaining, len(content) - inside)
-            final_index = (item['offset'] + item['length'] - 1) // self.meta.piece_length
-            self.prefetch(range(index + 1, min(index + 5, final_index + 1)))
-            yield content[inside:inside + size]
-            position += size
-            remaining -= size
+        generation = None
+        tail_limit = min(4*1024*1024,max(4*self.meta.piece_length,item['length']//128))
+        index_probe = offset > 0 and offset+length == item['length'] and length <= tail_limit
+        if self.stream_file == file_index and not index_probe and length >= min(256*1024,item['length']):
+            with self.lock:
+                self.read_sequence += 1
+                generation = self.window_generation = self.read_sequence
+                self.readers[generation] = position
+        try:
+            while remaining:
+                index, inside = divmod(position, self.meta.piece_length)
+                content = self.piece(index)
+                size = min(remaining, len(content) - inside)
+                final_index = (item['offset'] + item['length'] - 1) // self.meta.piece_length
+                if generation is not None:
+                    self._window_at(position+size,generation)
+                elif self.stream_file is None:
+                    self.prefetch(range(index + 1, min(index + 5, final_index + 1)))
+                yield content[inside:inside + size]
+                position += size
+                remaining -= size
+        finally:
+            restore = None
+            if generation is not None:
+                with self.lock:
+                    self.readers.pop(generation,None)
+                    if generation == self.window_generation and self.readers:
+                        self.window_generation = max(self.readers)
+                        restore = (self.readers[self.window_generation],self.window_generation)
+                if restore:
+                    self._window_at(*restore)

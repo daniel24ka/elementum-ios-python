@@ -12,6 +12,7 @@ import xbmcgui
 import xbmcvfs
 
 from .backend import Backend, BackendServer
+from .playback_policy import StallGuard, kodi_cache_target
 
 
 class Kodi:
@@ -147,6 +148,29 @@ class Kodi:
                                     '\n\nPython torrent engine; no additional native library.\n'
                                     'Feature parity with the original engine is still under development.')
 
+    def optimize_cache(self):
+        current = {key:self.rpc('Settings.GetSettingValue',{'setting':key})['value'] for key in
+                   ('filecache.memorysize','filecache.readfactor','filecache.buffermode')}
+        free = re.search(r'\d+',xbmc.getInfoLabel('System.Memory(free)'))
+        if not free:
+            self.notify('Could not read available memory; buffer settings retained')
+            return
+        target = dict(current)
+        target['filecache.memorysize'] = kodi_cache_target(int(free[0]),current['filecache.memorysize'])
+        if current['filecache.readfactor'] == 400:
+            target['filecache.readfactor'] = 0  # Kodi's native adaptive reader.
+        if current['filecache.buffermode'] == 3:
+            target['filecache.buffermode'] = 2
+        profile = xbmcvfs.translatePath(self.addon.getAddonInfo('profile'))
+        backup = os.path.join(profile,'python-kodi-cache-before.json')
+        if not os.path.exists(backup):
+            with open(backup,'w',encoding='utf-8') as handle:
+                json.dump(current,handle)
+        for key,value in target.items():
+            if value != current[key] and not self.rpc('Settings.SetSettingValue',{'setting':key,'value':value}):
+                raise RuntimeError('Kodi could not apply its cache setting')
+        self.notify('Playback buffer optimized; applies to the next video')
+
     def confirm(self, text):
         return xbmcgui.Dialog().yesno('Elementum', text)
 
@@ -174,7 +198,19 @@ def run():
             except OSError:
                 kodi.error('Web interface', 'The dashboard port is unavailable; Kodi menus remain available')
         xbmc.log('Elementum Python backend listening on loopback', xbmc.LOGINFO)
-        player = xbmc.Player()
+        class PlaybackPlayer(xbmc.Player):
+            failed = False
+            def onPlayBackError(self):
+                self.failed = True
+            def onAVStarted(self):
+                self.failed = False
+        player = PlaybackPlayer()
+        guard = StallGuard()
+        recovering_url = None
+        recovery_deadline = 0
+        last_position = last_duration = 0
+        last_health = time.monotonic()
+        last_received = 0
         tracked_url = None
         published_ids = {}
         was_playing = False
@@ -195,6 +231,8 @@ def run():
             if playing:
                 try:
                     if player.getPlayingFile() != url:
+                        if recovering_url == url and time.monotonic() < recovery_deadline:
+                            continue
                         if was_playing and tracked_url == url:
                             kodi.clear_ids(published_ids)
                             published_ids = {}
@@ -203,6 +241,8 @@ def run():
                         continue
                     if tracked_url != url:
                         tracked_url = url
+                        recovering_url = None
+                        last_health, last_received = time.monotonic(),0
                         if backend.pending_resume:
                             player.seekTime(float(backend.pending_resume))
                             backend.pending_resume = 0
@@ -217,14 +257,39 @@ def run():
 
                         threading.Thread(target=announce, daemon=True).start()
                     was_playing = True
+                    last_position, last_duration = player.getTime(),player.getTotalTime()
+                    caching = xbmc.getCondVisibility('Player.Caching')
+                    paused = xbmc.getCondVisibility('Player.Paused')
+                    session['store'].update_playback(last_duration,caching)
+                    received = session['store'].network_bytes
+                    if time.monotonic()-last_health >= 15:
+                        rate = (received-last_received)/max(1,time.monotonic()-last_health)
+                        backend.source_health.record(session.get('uri',''),rate=rate)
+                        last_health,last_received = time.monotonic(),received
+                    if guard.sample(url,last_position,last_duration,received,time.monotonic(),paused,caching,player.failed):
+                        request = backend.recovery_request(session,last_position)
+                        if request:
+                            recovering_url,recovery_deadline = url,time.monotonic()+150
+                            kodi.notify('Source stalled; switching source and keeping your position')
+                            kodi.rpc('Player.Open',{'item':{'file':request}})
                     if time.monotonic() - last_save >= 10 and backend.state['history']:
-                        backend.state['history'][0]['position'] = player.getTime()
-                        backend.state['history'][0]['duration'] = player.getTotalTime()
+                        backend.state['history'][0]['position'] = last_position
+                        backend.state['history'][0]['duration'] = last_duration
                         backend.save()
                         last_save = time.monotonic()
                 except RuntimeError:
                     pass
             elif was_playing and tracked_url == url:
+                if recovering_url == url and time.monotonic() < recovery_deadline:
+                    continue
+                if player.failed and guard.sample(url,last_position,last_duration,session['store'].network_bytes,
+                                                   time.monotonic(),failed=True):
+                    request = backend.recovery_request(session,last_position)
+                    if request:
+                        recovering_url,recovery_deadline = url,time.monotonic()+150
+                        kodi.notify('Playback interrupted; switching source and keeping your position')
+                        kodi.rpc('Player.Open',{'item':{'file':request}})
+                        continue
                 kodi.clear_ids(published_ids)
                 published_ids = {}
                 backend.engine.stop()

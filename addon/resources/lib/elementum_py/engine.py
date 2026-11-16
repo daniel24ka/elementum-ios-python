@@ -149,7 +149,11 @@ class TorrentEngine:
                 use_disk = force_disk or self.get_setting('download_storage') != '1'
                 def fetch_piece(index):
                     return pool.fetch(index) if buffering_done.is_set() else pool.fetch(index, timeout=min(45, remaining()))
-                store = PieceStore(meta, peer_fetcher=fetch_piece if pool else None,
+                try:
+                    cache_mib = max(16,min(64,int(self.get_setting('stream_cache_mb') or '32')))
+                except ValueError:
+                    cache_mib = 32
+                store = PieceStore(meta, max_cache_bytes=cache_mib*1024*1024, peer_fetcher=fetch_piece if pool else None,
                                    cache_dir=os.path.join(folder, 'pieces') if use_disk else None,
                                    allow_webseeds=not peer_only, cancel=cancel,
                                    prefetch_budget=(lambda: max(0, pool.stats()['unchoked_peers'] - 1)) if pool else None)
@@ -166,6 +170,8 @@ class TorrentEngine:
                         self.last_preparation['stage'] = 'video_index'
                         self.progress('Buffering the video seek index')
                         store.piece(last)
+                if streaming and self.get_setting('adaptive_buffer') != 'false':
+                    store.configure_stream(file_index)
                 stream = StreamServer(store, file_index) if streaming else None
                 session = {'meta': meta, 'pool': pool, 'store': store, 'stream': stream,
                            'cancel': cancel, 'file_index': file_index, 'uri': uri,
@@ -296,6 +302,9 @@ class TorrentEngine:
                   'disk_cache_hits': session['store'].disk_hits}
         result.update({'piece_length': session['meta'].piece_length, 'cached_bytes': cached_bytes,
                        'prefetch_workers': session['store'].prefetch_workers})
+        result['buffer'] = session['store'].buffer_stats()
+        if session['stream']:
+            result['http'] = session['stream'].stats()
         if session['pool']:
             result.update(session['pool'].stats())
         return result

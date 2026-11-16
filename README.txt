@@ -1,6 +1,6 @@
 Elementum iOS Python — development port
 
-Status: 0.3.2 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
+Status: 0.3.3 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
 The original native engine's advanced feature set is not fully reproduced.
 This repository does not distribute a replacement Kodi application.
 
@@ -95,7 +95,7 @@ Version 0.3.0:
 - Cache up to four verified metadata results briefly; reserve upload slots
   for foreground reads/seeks and interrupt pending peer preparation on cancel.
 
-Validation: 101 packaged protocol/API/stress tests, including real peer download,
+Validation: 124 packaged protocol/API/stress tests, including real peer download,
 pause/restart/resume, corrupt-cache recheck and repair, offline range playback,
 storage rejection before transfer, Web auth/origin/deletion checks and recovery.
 Signed-in Trakt/SIMKL scrobbling and real-device Up Next transitions have not
@@ -130,3 +130,46 @@ Subtitle integration adapts the MIT-licensed SubBridge project:
 https://github.com/subzero75/kodi-subbridge
 Its original license and modification notice are included in the add-on.
 No subtitle text, account credentials or device identifiers are distributed.
+
+Version 0.3.3 playback optimization:
+- Continuously replenish a bounded verified read-ahead window instead of
+  scheduling only the first few pieces. Adapt its size to video bitrate,
+  transfer observations and buffering, within a 16-64 MiB cache (32 by default).
+- Give a new long seek range the active window; cancel obsolete queued work.
+  Keep in-flight reads valid, ignore small codec-tail probes for window focus,
+  and reserve one available upload slot for foreground reads and seeks.
+- Rank sources using local observed startup success/failure and throughput,
+  retaining Burst's existing quality slots. Store only hashed source identities
+  and bounded aggregate history, expiring after seven days; never persist URLs.
+- Recover an empty-buffer stall after 25 seconds without playback advancement
+  and 15 seconds without verified data, or a reported playback error. Pauses,
+  seeks, manual stops, raw unidentified magnets and near-end playback are guarded.
+- Try at most two remembered same-title alternatives, skip already attempted
+  sources and higher known resolution, and resume the resolved replacement at
+  the saved position. This is best-effort timeline matching across releases.
+- Add Optimize playback buffer to the Kodi menu. It chooses a bounded native
+  cache from available memory, preserves larger custom/disk caches, enables
+  native adaptive reads when replacing the default, and backs up prior settings.
+  Kodi settings change only when this action is invoked, not on every startup.
+- Distinguish verified torrent read-ahead from native Kodi cache progress in
+  diagnostics. A short white seek-bar segment on a large video can be normal:
+  the same memory buffer represents a smaller fraction of a larger file.
+
+Validation: 124 packaged tests include rolling refill, seek priority, memory
+bounds, service-loop stall/reopen/seek and pause/stop guards, plus all previous
+protocol, 24 GiB addressing, cancellation, download and subtitle regressions.
+Automatic mid-playback failure handling is covered by controlled service-loop
+injection; it is not a guarantee of recovery from every real swarm outage.
+
+Physical validation: ordinary iPhone Kodi 21.3 played Sintel through P2P with
+webseeds disabled, detected H.264/AAC streams, advanced throughout the sample,
+grew its verified torrent cache to 31.94 MiB within the 32 MiB limit, and resumed
+after an eight-minute seek. The requested native cache action selected 64 MB
+and adaptive reads, with prior settings backed up. Sequential swarm runs had
+changing peer availability and different sample durations; these observations
+do not establish a universal throughput or startup-time improvement.
+
+Design references (independent implementation):
+https://www.libtorrent.org/streaming.html
+https://kodi.wiki/view/Settings/Services/Caching
+https://github.com/xbmc/xbmc/blob/Omega/xbmc/filesystem/FileCache.cpp

@@ -1,9 +1,9 @@
 [
   {
     "id": "plugin.video.elementum",
-    "version": "0.3.2",
-    "bytes": 6944507,
-    "sha256": "a4f3059245bd08a803e551c210d5d28411ff9b40d93b6766073b2b9769c2874a"
+    "version": "0.3.3",
+    "bytes": 6950651,
+    "sha256": "2e066cde54d4ab0aed40cc845ec0b701ff2e985febdb087040b6906c336d29c0"
   },
   {
     "id": "repository.elementumios.python",
