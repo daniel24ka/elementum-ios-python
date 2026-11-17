@@ -1,6 +1,6 @@
 Elementum iOS Python — development port
 
-Status: 0.3.4 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
+Status: 0.3.5 beta. Supports movies/TV, Burst source searches, v1 magnets and torrent playback.
 The original native engine's advanced feature set is not fully reproduced.
 This repository does not distribute a replacement Kodi application.
 
@@ -169,9 +169,14 @@ and adaptive reads, with prior settings backed up. Sequential swarm runs had
 changing peer availability and different sample durations; these observations
 do not establish a universal throughput or startup-time improvement.
 
-Version 0.3.4, published in the repository. It is the test build 0.3.4~dev2
-with its version number changed. The test builds ran on an iPhone; what that
-showed, and what ~dev2 fixed, is at the top of CHANGELOG.txt:
+Version 0.3.5, published in the repository, is 0.3.4 with two entries added
+to the TV menu: "Top Israeli series" (most votes in the catalog) and "New
+Israeli series" (first aired in the last eighteen months). The two lists were
+checked against the live catalog and have not been seen on a device.
+
+Version 0.3.4 is the test build 0.3.4~dev2 with its version number changed.
+The test builds ran on an iPhone; what that showed, and what ~dev2 fixed, is
+in CHANGELOG.txt:
 - Subtitle add-ons such as Wizdom now receive the IMDb number of what is
   playing, and the service survives being switched off and on or updated.
 - Every piece is downloaded block by block from all unchoked peers at once, up

@@ -1,6 +1,7 @@
 """Elementum view, provider and playback API implemented inside Kodi's Python."""
 
 import base64
+import datetime
 import json
 import os
 import re
@@ -219,9 +220,14 @@ class Backend:
         suffix = path[len(base):].strip('/')
         page = min(500, max(1, self.number(query.get('page')) or 1))
         if not suffix:
-            return view('', [list_item(label, plugin_url(base + route)) for label, route in (
-                ('Search', '/search'), ('Popular', '/popular'), ('Top rated', '/top'),
-                ('Recent', '/recent'), ('Trending', '/trending'), ('Genres', '/genres'), ('Library', '/library'))])
+            entries = [('Search', '/search'), ('Popular', '/popular'), ('Top rated', '/top'),
+                       ('Recent', '/recent'), ('Trending', '/trending'), ('Genres', '/genres')]
+            if kind == 'tv':
+                hebrew = str(self.kodi.language()).startswith('he')
+                entries += [('סדרות ישראליות מובילות' if hebrew else 'Top Israeli series', '/israeli/top'),
+                            ('סדרות ישראליות חדשות' if hebrew else 'New Israeli series', '/israeli/new')]
+            entries.append(('Library', '/library'))
+            return view('', [list_item(label, plugin_url(base + route)) for label, route in entries])
         if suffix == 'library':
             return view('movies' if kind == 'movie' else 'tvshows',
                         [media_item(entry['metadata'], kind) for entry in self.state['library'] if entry['kind'] == kind])
@@ -242,6 +248,20 @@ class Backend:
         elif suffix.startswith('popular/genre/'):
             endpoint = '/discover/' + kind
             params.update({'with_genres': suffix.rsplit('/', 1)[1], 'sort_by': 'popularity.desc'})
+        elif kind == 'tv' and suffix in ('israeli/top', 'israeli/new'):
+            endpoint = '/discover/tv'
+            # News (10763) and talk (10767) programmes are produced in Israel too, but are not series.
+            params.update({'with_origin_country': 'IL', 'without_genres': '10763,10767'})
+            if suffix == 'israeli/top':
+                # By number of votes: the series most viewers know, which are also the ones
+                # sources carry. Sorted by popularity, old local programmes with no source lead.
+                params['sort_by'] = 'vote_count.desc'
+            else:
+                # First aired in the last eighteen months, most popular first. Sorted by date
+                # alone, entries without a poster or a single vote come first.
+                today = datetime.date.today()
+                params.update({'sort_by': 'popularity.desc', 'first_air_date.lte': today.isoformat(),
+                               'first_air_date.gte': (today - datetime.timedelta(days=548)).isoformat()})
         else:
             category = {'popular': 'popular', 'top': 'top_rated',
                         'recent': 'now_playing' if kind == 'movie' else 'on_the_air'}.get(suffix)
@@ -250,6 +270,15 @@ class Backend:
             endpoint = '/{}/{}'.format(kind, category)
         response = self.catalog.api(endpoint, params)
         items = [media_item(item, kind) for item in response.get('results', [])]
+        if suffix.startswith('israeli/'):
+            # With Kodi in another language the catalog gives translated names; the
+            # Hebrew name is the one an Israeli viewer recognises.
+            # Kodi shows the title of a video item in its lists, not the label, so both carry it.
+            for entry in items:
+                original = entry['info'].get('originaltitle')
+                if original and original != entry['info'].get('title'):
+                    both = '{} · {}'.format(entry['label'], original) if entry['label'] else original
+                    entry['label'] = entry['info']['title'] = both
         if page < response.get('total_pages', 1) and page < 500:
             items.append(list_item('LOCALIZE[30218]', plugin_url(path, **dict(query, page=page + 1))))
         return view('movies' if kind == 'movie' else 'tvshows', items)

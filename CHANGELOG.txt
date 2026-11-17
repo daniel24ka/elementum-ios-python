@@ -1,3 +1,13 @@
+0.3.5
+- TV menu: "Top Israeli series" (the series produced in Israel with the most
+  votes in the catalog) and "New Israeli series" (first aired in the last
+  eighteen months, most popular first). News and talk programmes are left
+  out. The two entries are named in Hebrew when Kodi is in Hebrew, and a
+  translated name is shown together with the Hebrew one.
+- 261 tests pass against the packaged code. Both lists were checked against
+  the live catalog in English and in Hebrew; they have not been seen on a
+  device, where Kodi decides how the combined name is displayed.
+
 0.3.4 (the test build 0.3.4~dev2 with its version number changed)
 Found on an iPhone with 0.3.4~dev1, fixed in 0.3.4~dev2
 - Subtitle add-ons: the playing item now carries its IMDb number (the film's
