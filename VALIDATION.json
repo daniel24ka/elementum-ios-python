@@ -1,310 +1,355 @@
 {
-  "version": "0.3.4",
-  "package_sha256": "23c6dee471d8ff7b82c7df2088bea7a3e8b04975877ed72304b6a41a6bf37a92",
+  "version": "0.3.5",
+  "package_sha256": "440d1bf4b9b5b7cbe88d8360d96ed6342c3f7d91dc42cb3e37a455b7f5d38bfb",
   "actual_packaged_backend_tested": true,
   "python": "3.12.10",
   "status": "pass",
-  "passed": 252,
+  "passed": 261,
   "skipped": 0,
   "failures": 0,
   "errors": 0,
-  "elapsed_seconds": 206.53,
-  "validated_at": "2026-11-16",
+  "elapsed_seconds": 208.05,
+  "validated_at": "2026-11-17",
   "cases": [
     {
       "test": "test_backend.BackendTests.test_catalog_pagination",
       "status": "pass",
-      "seconds": 0.5532
+      "seconds": 0.5456
     },
     {
       "test": "test_backend.BackendTests.test_companion_menu_uses_official_addons",
       "status": "pass",
-      "seconds": 0.5185
+      "seconds": 0.5086
     },
     {
       "test": "test_backend.BackendTests.test_concurrent_catalog_requests_share_one_fetch",
       "status": "pass",
-      "seconds": 0.5104
+      "seconds": 0.511
     },
     {
       "test": "test_backend.BackendTests.test_diagnostic_not_misidentified_as_provider",
       "status": "pass",
-      "seconds": 0.5128
+      "seconds": 0.5162
     },
     {
       "test": "test_backend.BackendTests.test_episode_autoplay_resolves_a_source",
       "status": "pass",
-      "seconds": 0.5257
+      "seconds": 0.547
     },
     {
       "test": "test_backend.BackendTests.test_episode_pack_history_keeps_separate_file_resume_positions",
       "status": "pass",
-      "seconds": 0.5205
+      "seconds": 0.5242
     },
     {
       "test": "test_backend.BackendTests.test_explicit_start_skips_resume_prompt_for_controlled_player_restart",
       "status": "pass",
-      "seconds": 0.5229
+      "seconds": 0.5324
     },
     {
       "test": "test_backend.BackendTests.test_failed_source_uses_same_title_alternative_and_records_actual_history",
       "status": "pass",
-      "seconds": 0.522
+      "seconds": 0.5228
     },
     {
       "test": "test_backend.BackendTests.test_library_addition_creates_playable_stream_file",
       "status": "pass",
-      "seconds": 0.5409
+      "seconds": 0.6108
     },
     {
       "test": "test_backend.BackendTests.test_missing_provider_callback_is_timeout_not_no_links",
       "status": "pass",
-      "seconds": 0.5189
+      "seconds": 0.5234
     },
     {
       "test": "test_backend.BackendTests.test_movie_search_object_and_info",
       "status": "pass",
-      "seconds": 0.5404
+      "seconds": 0.5374
     },
     {
       "test": "test_backend.BackendTests.test_non_english_interface_keeps_an_english_provider_title",
       "status": "pass",
-      "seconds": 0.5252
+      "seconds": 0.5329
     },
     {
       "test": "test_backend.BackendTests.test_original_frontend_view_contract",
       "status": "pass",
-      "seconds": 0.5202
+      "seconds": 0.5366
     },
     {
       "test": "test_backend.BackendTests.test_playback_redirect_and_history",
       "status": "pass",
-      "seconds": 0.5202
+      "seconds": 0.5457
     },
     {
       "test": "test_backend.BackendTests.test_real_callback_burst_payload_contract",
       "status": "pass",
-      "seconds": 0.5236
+      "seconds": 0.5261
     },
     {
       "test": "test_backend.BackendTests.test_search_always_closes_progress",
       "status": "pass",
-      "seconds": 0.5231
+      "seconds": 0.5293
     },
     {
       "test": "test_backend.BackendTests.test_seasons_episodes_and_episode_payload",
       "status": "pass",
-      "seconds": 0.5225
+      "seconds": 0.5793
     },
     {
       "test": "test_backend.BackendTests.test_source_recovery_does_not_increase_selected_resolution",
       "status": "pass",
-      "seconds": 0.5077
+      "seconds": 0.5294
     },
     {
       "test": "test_backend.BackendTests.test_source_recovery_is_limited_to_two_alternatives",
       "status": "pass",
-      "seconds": 0.5115
+      "seconds": 0.5259
     },
     {
       "test": "test_backend.BackendTests.test_source_recovery_never_uses_a_different_movie_or_episode",
       "status": "pass",
-      "seconds": 0.5154
+      "seconds": 0.5277
     },
     {
       "test": "test_backend.BackendTests.test_source_recovery_respects_cancellation_and_disable_setting",
       "status": "pass",
-      "seconds": 0.5201
+      "seconds": 0.526
     },
     {
       "test": "test_backend.BackendTests.test_unknown_callback_rejected",
       "status": "pass",
-      "seconds": 0.5105
+      "seconds": 0.5306
     },
     {
       "test": "test_backend.BackendTests.test_unknown_endpoint_does_not_claim_success",
       "status": "pass",
-      "seconds": 0.5121
+      "seconds": 0.5287
     },
     {
       "test": "test_downloads.DownloadsTests.test_complete_then_offline_seek_and_integrity",
       "status": "pass",
-      "seconds": 3.0702
+      "seconds": 2.5992
     },
     {
       "test": "test_downloads.DownloadsTests.test_journal_restart_cancel_and_safe_removal",
       "status": "pass",
-      "seconds": 2.5423
+      "seconds": 2.557
     },
     {
       "test": "test_downloads.DownloadsTests.test_low_storage_does_not_prevent_offline_recheck",
       "status": "pass",
-      "seconds": 2.5661
+      "seconds": 2.5822
     },
     {
       "test": "test_downloads.DownloadsTests.test_old_service_worker_cannot_overwrite_journal_after_restart",
       "status": "pass",
-      "seconds": 2.5388
+      "seconds": 2.5501
     },
     {
       "test": "test_downloads.DownloadsTests.test_pause_resume_recovery_and_bounded_parallelism",
       "status": "pass",
-      "seconds": 2.6361
+      "seconds": 2.7056
     },
     {
       "test": "test_downloads.DownloadsTests.test_recheck_detects_saved_corruption_and_resume_repairs_it",
       "status": "pass",
-      "seconds": 2.6713
+      "seconds": 2.7292
     },
     {
       "test": "test_downloads.DownloadsTests.test_storage_check_before_piece_transfer",
       "status": "pass",
-      "seconds": 2.5517
+      "seconds": 2.0663
     },
     {
       "test": "test_downloads.DownloadsTests.test_validation_secret_free_snapshot_and_metadata",
       "status": "pass",
-      "seconds": 2.5431
+      "seconds": 2.5502
     },
     {
       "test": "test_integrations.IntegrationTests.test_episode_and_show_ids_never_confused",
       "status": "pass",
-      "seconds": 0.0075
+      "seconds": 0.0092
     },
     {
       "test": "test_integrations.IntegrationTests.test_future_and_unknown_airdate_not_autoplayed",
       "status": "pass",
-      "seconds": 0.0134
+      "seconds": 0.0164
     },
     {
       "test": "test_integrations.IntegrationTests.test_generic_magnet_not_guessed_as_movie_or_episode",
       "status": "pass",
-      "seconds": 0.0011
+      "seconds": 0.0018
     },
     {
       "test": "test_integrations.IntegrationTests.test_movie_ids_match_both_existing_scrobblers",
       "status": "pass",
-      "seconds": 0.0035
+      "seconds": 0.0057
     },
     {
       "test": "test_integrations.IntegrationTests.test_next_episode_same_season",
       "status": "pass",
-      "seconds": 0.0065
+      "seconds": 0.0096
     },
     {
       "test": "test_integrations.IntegrationTests.test_next_episode_season_transition",
       "status": "pass",
-      "seconds": 0.0069
+      "seconds": 0.0123
     },
     {
       "test": "test_integrations.IntegrationTests.test_player_item_carries_the_imdb_number_subtitle_addons_ask_for",
       "status": "pass",
-      "seconds": 0.0117
+      "seconds": 0.02
     },
     {
       "test": "test_integrations.IntegrationTests.test_upnext_official_notification_contract",
       "status": "pass",
-      "seconds": 0.0106
+      "seconds": 0.0266
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_films_have_no_such_list",
+      "status": "pass",
+      "seconds": 0.0113
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_leading_list_asks_for_israeli_series_by_number_of_votes",
+      "status": "pass",
+      "seconds": 0.0183
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_lists_are_served_over_the_local_api",
+      "status": "pass",
+      "seconds": 0.5342
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_menu_names_follow_the_language_of_kodi",
+      "status": "pass",
+      "seconds": 0.0203
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_name_missing_in_the_language_of_kodi_shows_the_hebrew_one_alone",
+      "status": "pass",
+      "seconds": 0.0242
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_new_list_asks_for_the_last_eighteen_months_by_popularity",
+      "status": "pass",
+      "seconds": 0.0145
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_next_page_stays_in_the_same_list",
+      "status": "pass",
+      "seconds": 0.0259
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_series_menu_offers_both_lists_and_the_film_menu_does_not",
+      "status": "pass",
+      "seconds": 0.0121
+    },
+    {
+      "test": "test_israeli.IsraeliSeriesTests.test_translated_name_is_shown_with_the_hebrew_one",
+      "status": "pass",
+      "seconds": 0.0182
     },
     {
       "test": "test_playback_optimization.BufferTests.test_background_window_continues_beyond_initial_three_jobs",
       "status": "pass",
-      "seconds": 0.0266
+      "seconds": 0.0287
     },
     {
       "test": "test_playback_optimization.BufferTests.test_close_joins_rolling_scheduler_and_cancels_prefetch",
       "status": "pass",
-      "seconds": 0.0063
+      "seconds": 0.008
     },
     {
       "test": "test_playback_optimization.BufferTests.test_large_open_ended_codec_probe_restores_live_reader_on_close",
       "status": "pass",
-      "seconds": 0.0305
+      "seconds": 0.0319
     },
     {
       "test": "test_playback_optimization.BufferTests.test_last_piece_stops_prefetch_at_selected_file_boundary",
       "status": "pass",
-      "seconds": 0.0238
+      "seconds": 0.0263
     },
     {
       "test": "test_playback_optimization.BufferTests.test_native_cache_target_preserves_custom_and_disk_choices",
       "status": "pass",
-      "seconds": 0.0026
+      "seconds": 0.0028
     },
     {
       "test": "test_playback_optimization.BufferTests.test_seek_replaces_window_and_old_reader_cannot_retarget_it",
       "status": "pass",
-      "seconds": 0.0323
+      "seconds": 0.0336
     },
     {
       "test": "test_playback_optimization.BufferTests.test_small_codec_tail_probe_does_not_replace_stream_window",
       "status": "pass",
-      "seconds": 0.0111
+      "seconds": 0.0151
     },
     {
       "test": "test_playback_optimization.BufferTests.test_time_target_is_bounded_for_large_and_unknown_bitrates",
       "status": "pass",
-      "seconds": 0.002
+      "seconds": 0.0027
     },
     {
       "test": "test_playback_optimization.HealthTests.test_history_is_bounded_and_expires",
       "status": "pass",
-      "seconds": 0.6095
+      "seconds": 1.1181
     },
     {
       "test": "test_playback_optimization.HealthTests.test_history_persists_no_urls_or_passkeys",
       "status": "pass",
-      "seconds": 0.0054
+      "seconds": 0.0188
     },
     {
       "test": "test_playback_optimization.HealthTests.test_history_reorders_only_within_existing_quality_slots",
       "status": "pass",
-      "seconds": 0.0052
+      "seconds": 0.008
     },
     {
       "test": "test_playback_optimization.HealthTests.test_same_info_hash_ignores_different_tracker_passkeys",
       "status": "pass",
-      "seconds": 0.0011
+      "seconds": 0.0021
     },
     {
       "test": "test_playback_optimization.HealthTests.test_unknown_sources_keep_provider_order",
       "status": "pass",
-      "seconds": 0.0009
+      "seconds": 0.0017
     },
     {
       "test": "test_playback_optimization.RecoveryTests.test_recovery_honors_disable_cancel_and_replaced_session",
       "status": "pass",
-      "seconds": 0.006
+      "seconds": 0.0099
     },
     {
       "test": "test_playback_optimization.RecoveryTests.test_recovery_is_bounded_to_two_distinct_alternatives",
       "status": "pass",
-      "seconds": 0.0108
+      "seconds": 0.019
     },
     {
       "test": "test_playback_optimization.RecoveryTests.test_recovery_never_guesses_a_title_for_raw_magnet",
       "status": "pass",
-      "seconds": 0.009
+      "seconds": 0.0091
     },
     {
       "test": "test_playback_optimization.RecoveryTests.test_recovery_skips_higher_resolution_and_preserves_exact_position",
       "status": "pass",
-      "seconds": 0.0107
+      "seconds": 0.0148
     },
     {
       "test": "test_playback_optimization.RecoveryTests.test_resolved_replacement_consumes_chain_resume_position_without_prompt",
       "status": "pass",
-      "seconds": 0.0184
+      "seconds": 0.0246
     },
     {
       "test": "test_playback_optimization.ServiceRecoveryTests.test_real_service_loop_never_recovers_a_user_pause_or_stop",
       "status": "pass",
-      "seconds": 0.0248
+      "seconds": 0.0303
     },
     {
       "test": "test_playback_optimization.ServiceRecoveryTests.test_real_service_loop_reopens_stalled_stream_and_seeks_after_resolution",
       "status": "pass",
-      "seconds": 0.0057
+      "seconds": 0.0071
     },
     {
       "test": "test_playback_optimization.StallTests.test_no_stall_without_caching_or_at_end_or_new_url",
@@ -324,62 +369,62 @@
     {
       "test": "test_protocols.LargeFileAddressingTests.test_24_gib_torrent_real_tcp_seek_beyond_20_gib",
       "status": "pass",
-      "seconds": 3.0527
+      "seconds": 3.0825
     },
     {
       "test": "test_protocols.LargePieceTests.test_eight_mib_piece_metadata_and_cross_boundary_stream",
       "status": "pass",
-      "seconds": 0.5079
+      "seconds": 0.5117
     },
     {
       "test": "test_protocols.LargePieceTests.test_large_piece_prefetch_concurrency_is_bounded",
       "status": "pass",
-      "seconds": 0.0003
+      "seconds": 0.0002
     },
     {
       "test": "test_protocols.ProtocolTests.test_compact_public_filter_and_ipv6",
       "status": "pass",
-      "seconds": 0.0002
+      "seconds": 0.0003
     },
     {
       "test": "test_protocols.ProtocolTests.test_conflicting_magnet_hashes_rejected",
       "status": "pass",
-      "seconds": 0.0
+      "seconds": 0.0001
     },
     {
       "test": "test_protocols.ProtocolTests.test_corrupt_metadata_rejected",
       "status": "pass",
-      "seconds": 0.0013
+      "seconds": 0.0023
     },
     {
       "test": "test_protocols.ProtocolTests.test_corrupt_piece_closes_peer",
       "status": "pass",
-      "seconds": 0.2073
+      "seconds": 0.2087
     },
     {
       "test": "test_protocols.ProtocolTests.test_delayed_unchoke_is_not_a_failed_handshake",
       "status": "pass",
-      "seconds": 8.2027
+      "seconds": 8.2043
     },
     {
       "test": "test_protocols.ProtocolTests.test_dht_cancellation",
       "status": "pass",
-      "seconds": 0.0001
+      "seconds": 0.0003
     },
     {
       "test": "test_protocols.ProtocolTests.test_dht_is_used_even_when_tracker_has_stale_peers",
       "status": "pass",
-      "seconds": 0.0051
+      "seconds": 0.2015
     },
     {
       "test": "test_protocols.ProtocolTests.test_http_tracker_real_announce",
       "status": "pass",
-      "seconds": 0.0009
+      "seconds": 0.0022
     },
     {
       "test": "test_protocols.ProtocolTests.test_inflight_piece_requests_share_one_download",
       "status": "pass",
-      "seconds": 0.0306
+      "seconds": 0.031
     },
     {
       "test": "test_protocols.ProtocolTests.test_invalid_base32_rejected",
@@ -389,52 +434,52 @@
     {
       "test": "test_protocols.ProtocolTests.test_invalid_bitfield_rejected",
       "status": "pass",
-      "seconds": 0.2051
+      "seconds": 0.2107
     },
     {
       "test": "test_protocols.ProtocolTests.test_iterative_dht_lookup_real_udp",
       "status": "pass",
-      "seconds": 0.0014
+      "seconds": 0.0013
     },
     {
       "test": "test_protocols.ProtocolTests.test_magnet_end_to_end_via_tracker",
       "status": "pass",
-      "seconds": 0.2148
+      "seconds": 0.2057
     },
     {
       "test": "test_protocols.ProtocolTests.test_magnet_hex_and_base32",
       "status": "pass",
-      "seconds": 0.0002
+      "seconds": 0.0003
     },
     {
       "test": "test_protocols.ProtocolTests.test_multiblock_metadata_exchange_real_tcp",
       "status": "pass",
-      "seconds": 0.001
+      "seconds": 0.013
     },
     {
       "test": "test_protocols.ProtocolTests.test_multitracker_deduplication",
       "status": "pass",
-      "seconds": 0.0015
+      "seconds": 0.0028
     },
     {
       "test": "test_protocols.ProtocolTests.test_new_discovery_peers_join_waiting_connector_workers",
       "status": "pass",
-      "seconds": 2.0398
+      "seconds": 2.0642
     },
     {
       "test": "test_protocols.ProtocolTests.test_persistent_connection_two_pieces",
       "status": "pass",
-      "seconds": 0.0017
+      "seconds": 0.0034
     },
     {
       "test": "test_protocols.ProtocolTests.test_pool_streams_seek_ranges_without_webseed",
       "status": "pass",
-      "seconds": 0.5203
+      "seconds": 0.5253
     },
     {
       "test": "test_protocols.ProtocolTests.test_prefetch_future_does_not_retain_piece_bytes",
       "status": "pass",
-      "seconds": 0.0004
+      "seconds": 0.0005
     },
     {
       "test": "test_protocols.ProtocolTests.test_relaxed_control_decoder_still_rejects_duplicate_keys",
@@ -444,12 +489,12 @@
     {
       "test": "test_protocols.ProtocolTests.test_requested_blocks_arriving_after_choke_remain_verified",
       "status": "pass",
-      "seconds": 0.0016
+      "seconds": 0.0031
     },
     {
       "test": "test_protocols.ProtocolTests.test_truly_unsolicited_block_still_rejected",
       "status": "pass",
-      "seconds": 0.2115
+      "seconds": 0.2137
     },
     {
       "test": "test_protocols.ProtocolTests.test_truncated_peer_list_rejected",
@@ -459,287 +504,287 @@
     {
       "test": "test_protocols.ProtocolTests.test_udp_tracker_ignores_wrong_transaction",
       "status": "pass",
-      "seconds": 0.0007
+      "seconds": 0.0011
     },
     {
       "test": "test_protocols.ProtocolTests.test_unsorted_peer_handshake_metadata_stays_verified",
       "status": "pass",
-      "seconds": 0.0026
+      "seconds": 0.0181
     },
     {
       "test": "test_protocols.ProtocolTests.test_verified_disk_resume_and_corruption",
       "status": "pass",
-      "seconds": 0.0116
+      "seconds": 0.0296
     },
     {
       "test": "test_reliability.ReliabilityTests.test_bad_ranges_are_416_without_fetching",
       "status": "pass",
-      "seconds": 0.5182
+      "seconds": 0.5233
     },
     {
       "test": "test_reliability.ReliabilityTests.test_cancelled_inflight_waiters_exit_and_do_not_cache_bytes",
       "status": "pass",
-      "seconds": 0.1098
+      "seconds": 0.1091
     },
     {
       "test": "test_reliability.ReliabilityTests.test_eighty_concurrent_seek_ranges_preserve_bytes_and_cache_bound",
       "status": "pass",
-      "seconds": 0.635
+      "seconds": 0.7047
     },
     {
       "test": "test_reliability.ReliabilityTests.test_head_does_not_download_a_piece",
       "status": "pass",
-      "seconds": 0.5098
+      "seconds": 0.5148
     },
     {
       "test": "test_reliability.ReliabilityTests.test_read_ahead_runs_on_one_peer_and_foreground_reads_stay_exact",
       "status": "pass",
-      "seconds": 0.5145
+      "seconds": 0.5541
     },
     {
       "test": "test_reliability.ReliabilityTests.test_stop_closes_pool_while_socket_preparation_is_pending",
       "status": "pass",
-      "seconds": 0.0026
+      "seconds": 0.0048
     },
     {
       "test": "test_reliability.ReliabilityTests.test_stop_interrupts_pending_metadata_preparation",
       "status": "pass",
-      "seconds": 0.0022
+      "seconds": 0.0036
     },
     {
       "test": "test_reliability.ReliabilityTests.test_three_real_engine_start_stream_stop_cycles",
       "status": "pass",
-      "seconds": 5.3374
+      "seconds": 5.3704
     },
     {
       "test": "test_reliability.ReliabilityTests.test_unavailable_source_returns_503_before_success_headers",
       "status": "pass",
-      "seconds": 0.5053
+      "seconds": 0.5091
     },
     {
       "test": "test_reliability.ReliabilityTests.test_unavailable_video_index_fails_before_player_url_is_published",
       "status": "pass",
-      "seconds": 0.8498
+      "seconds": 1.6652
     },
     {
       "test": "test_reliability.ReliabilityTests.test_unknown_stream_token_and_non_ascii_path_are_404",
       "status": "pass",
-      "seconds": 0.5084
+      "seconds": 0.5107
     },
     {
       "test": "test_reliability.ReliabilityTests.test_verified_metadata_peer_is_not_lost_in_random_stale_endpoints",
       "status": "pass",
-      "seconds": 2.0443
+      "seconds": 2.0427
     },
     {
       "test": "test_repository_checksums.RepositoryChecksumTests.test_every_checksum_matches_kodi_parser_and_archive",
       "status": "pass",
-      "seconds": 0.4754
+      "seconds": 0.6678
     },
     {
       "test": "test_restart.BindTests.test_another_error_is_not_retried",
       "status": "pass",
-      "seconds": 0.006
+      "seconds": 0.0065
     },
     {
       "test": "test_restart.BindTests.test_busy_port_is_retried_until_the_previous_instance_lets_go",
       "status": "pass",
-      "seconds": 0.0073
+      "seconds": 0.0061
     },
     {
       "test": "test_restart.BindTests.test_kodi_stopping_the_service_ends_the_wait",
       "status": "pass",
-      "seconds": 0.0068
+      "seconds": 0.0061
     },
     {
       "test": "test_restart.BindTests.test_optional_listener_gives_up_after_its_patience",
       "status": "pass",
-      "seconds": 0.0055
+      "seconds": 0.0058
     },
     {
       "test": "test_restart.BindTests.test_user_is_told_once_and_the_attempts_go_on",
       "status": "pass",
-      "seconds": 0.006
+      "seconds": 0.0065
     },
     {
       "test": "test_restart.BoundedStopTests.test_dial_that_completes_after_the_pool_closed_is_closed_and_not_kept",
       "status": "pass",
-      "seconds": 1.2046
+      "seconds": 1.2037
     },
     {
       "test": "test_restart.BoundedStopTests.test_pool_close_does_not_wait_for_a_dial_that_is_still_timing_out",
       "status": "pass",
-      "seconds": 2.0366
+      "seconds": 2.0151
     },
     {
       "test": "test_restart.BoundedStopTests.test_stop_tells_everything_first_and_waits_last",
       "status": "pass",
-      "seconds": 0.0019
+      "seconds": 0.003
     },
     {
       "test": "test_restart.BoundedStopTests.test_stopping_service_waits_for_nothing_and_drops_the_open_responses",
       "status": "pass",
-      "seconds": 0.0022
+      "seconds": 0.0031
     },
     {
       "test": "test_restart.ClosedEngineTests.test_cancelled_preparation_frees_the_engine_at_once",
       "status": "pass",
-      "seconds": 2.047
+      "seconds": 2.0542
     },
     {
       "test": "test_restart.ClosedEngineTests.test_engine_cannot_be_replaced_once_the_service_is_closing",
       "status": "pass",
-      "seconds": 0.0111
+      "seconds": 0.0176
     },
     {
       "test": "test_restart.ClosedEngineTests.test_engine_swapped_in_just_before_the_close_is_the_one_that_is_stopped",
       "status": "pass",
-      "seconds": 0.0106
+      "seconds": 0.0168
     },
     {
       "test": "test_restart.ClosedEngineTests.test_no_session_starts_after_the_last_stop",
       "status": "pass",
-      "seconds": 0.0242
+      "seconds": 0.0288
     },
     {
       "test": "test_restart.ClosedEngineTests.test_ordinary_stop_does_not_close_the_engine",
       "status": "pass",
-      "seconds": 0.0142
+      "seconds": 0.0131
     },
     {
       "test": "test_restart.DownloadsCloseTests.test_journal_that_cannot_be_written_does_not_keep_the_downloads_running",
       "status": "pass",
-      "seconds": 0.0089
+      "seconds": 0.0099
     },
     {
       "test": "test_restart.DroppedStreamTests.test_ordinary_close_lets_the_player_finish_what_is_cached",
       "status": "pass",
-      "seconds": 2.6253
+      "seconds": 2.1198
     },
     {
       "test": "test_restart.DroppedStreamTests.test_stopping_service_also_ends_the_response_of_a_stream_that_was_closed_before",
       "status": "pass",
-      "seconds": 3.1272
+      "seconds": 3.1077
     },
     {
       "test": "test_restart.DroppedStreamTests.test_stopping_service_ends_a_response_that_a_paused_player_does_not_read",
       "status": "pass",
-      "seconds": 1.0827
+      "seconds": 1.0956
     },
     {
       "test": "test_restart.ForcedEndTests.test_forced_end_inside_the_downloads_step_still_stops_playback_and_the_dashboard",
       "status": "pass",
-      "seconds": 0.0191
+      "seconds": 0.0163
     },
     {
       "test": "test_restart.ForcedEndTests.test_forced_end_inside_the_pool_still_closes_store_and_stream",
       "status": "pass",
-      "seconds": 0.0173
+      "seconds": 0.0135
     },
     {
       "test": "test_restart.ForcedEndTests.test_listener_whose_accept_thread_never_started_is_retired_at_once",
       "status": "pass",
-      "seconds": 0.016
+      "seconds": 0.0139
     },
     {
       "test": "test_restart.ForcedEndTests.test_rebuild_that_cannot_start_its_thread_leaves_no_unserved_port",
       "status": "pass",
-      "seconds": 4.0679
+      "seconds": 4.059
     },
     {
       "test": "test_restart.ForcedEndTests.test_run_all_finishes_the_steps_and_raises_the_interruption_afterwards",
       "status": "pass",
-      "seconds": 0.0053
+      "seconds": 0.0109
     },
     {
       "test": "test_restart.ForcedEndTests.test_server_close_stops_the_backend_even_when_the_port_could_not_be_released",
       "status": "pass",
-      "seconds": 0.5165
+      "seconds": 0.5238
     },
     {
       "test": "test_restart.ReleaseTests.test_next_instance_binds_the_port_while_the_old_one_is_still_closing",
       "status": "pass",
-      "seconds": 0.5168
+      "seconds": 0.5684
     },
     {
       "test": "test_restart.ReleaseTests.test_one_failing_step_does_not_keep_the_others_running",
       "status": "pass",
-      "seconds": 0.0076
+      "seconds": 0.0179
     },
     {
       "test": "test_restart.ReleaseTests.test_port_is_free_before_downloads_and_playback_are_stopped",
       "status": "pass",
-      "seconds": 12.1079
+      "seconds": 12.1313
     },
     {
       "test": "test_restart.ReleaseTests.test_release_is_repeatable_and_the_watchdog_leaves_a_released_port_alone",
       "status": "pass",
-      "seconds": 2.5338
+      "seconds": 2.5487
     },
     {
       "test": "test_restart.ReleaseTests.test_threads_end_when_the_listener_never_opened",
       "status": "pass",
-      "seconds": 0.0074
+      "seconds": 0.0215
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_cancelled_piece_does_not_go_on_to_the_web_seeds",
       "status": "pass",
-      "seconds": 0.0003
+      "seconds": 0.0004
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_discovery_threads_leave_after_a_forced_end",
       "status": "pass",
-      "seconds": 0.0009
+      "seconds": 0.0021
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_idle_read_ahead_threads_leave_after_a_forced_end",
       "status": "pass",
-      "seconds": 0.5145
+      "seconds": 0.5707
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_idle_read_ahead_threads_leave_when_the_store_is_cancelled_without_a_close",
       "status": "pass",
-      "seconds": 0.6108
+      "seconds": 0.6071
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_piece_store_threads_leave_when_the_session_is_cancelled_without_a_close",
       "status": "pass",
-      "seconds": 0.0013
+      "seconds": 0.0017
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_task_that_has_not_started_can_be_cancelled_and_a_started_one_cannot",
       "status": "pass",
-      "seconds": 0.0204
+      "seconds": 0.0209
     },
     {
       "test": "test_restart.SelfEndingThreadTests.test_web_seed_that_answers_nonsense_is_a_failed_source_and_not_a_crash",
       "status": "pass",
-      "seconds": 0.0017
+      "seconds": 0.0014
     },
     {
       "test": "test_restart.ServiceShutdownTests.test_interrupted_shutdown_still_frees_the_port_and_tells_everything_to_stop",
       "status": "pass",
-      "seconds": 0.0041
+      "seconds": 0.0059
     },
     {
       "test": "test_restart.ServiceShutdownTests.test_port_is_given_back_before_anything_else",
       "status": "pass",
-      "seconds": 0.0047
+      "seconds": 0.0063
     },
     {
       "test": "test_restart.ServiceShutdownTests.test_service_starts_once_the_previous_instance_frees_the_port",
       "status": "pass",
-      "seconds": 0.0053
+      "seconds": 0.006
     },
     {
       "test": "test_restart.ServiceShutdownTests.test_service_stopped_while_waiting_for_the_port_closes_its_threads",
       "status": "pass",
-      "seconds": 0.0041
+      "seconds": 0.0059
     },
     {
       "test": "test_restart.ServiceShutdownTests.test_startup_failure_other_than_a_busy_port_is_reported_and_cleaned_up",
       "status": "pass",
-      "seconds": 0.005
+      "seconds": 0.0055
     },
     {
       "test": "test_restart.StreamListenerTests.test_one_slow_accept_does_not_condemn_a_healthy_listener",
@@ -754,42 +799,42 @@
     {
       "test": "test_restart.StreamListenerTests.test_watchdog_does_not_reopen_the_stream_of_a_session_that_ended",
       "status": "pass",
-      "seconds": 4.5536
+      "seconds": 4.0353
     },
     {
       "test": "test_review_fixes.DiscoveryFixTests.test_broken_tracker_reply_does_not_cost_the_other_trackers",
       "status": "pass",
-      "seconds": 0.0137
+      "seconds": 0.0025
     },
     {
       "test": "test_review_fixes.DiscoveryFixTests.test_ipv4_peer_list_behind_nat64_is_still_read_as_ipv4",
       "status": "pass",
-      "seconds": 0.505
+      "seconds": 0.5163
     },
     {
       "test": "test_review_fixes.DiscoveryFixTests.test_magnet_resolution_survives_an_unexpected_error_from_discovery",
       "status": "pass",
-      "seconds": 0.002
+      "seconds": 0.0039
     },
     {
       "test": "test_review_fixes.DiscoveryFixTests.test_native_ipv6_peer_list_is_not_also_read_as_ipv4",
       "status": "pass",
-      "seconds": 0.5064
+      "seconds": 0.5116
     },
     {
       "test": "test_review_fixes.PrepareFixTests.test_cache_of_one_piece_does_not_download_either_end_twice",
       "status": "pass",
-      "seconds": 2.0543
+      "seconds": 2.1318
     },
     {
       "test": "test_review_fixes.PrepareFixTests.test_crafted_matroska_header_is_rejected_in_bounded_time",
       "status": "pass",
-      "seconds": 0.0035
+      "seconds": 0.0042
     },
     {
       "test": "test_review_fixes.PrepareFixTests.test_start_buffer_is_skipped_not_failed_when_the_budget_is_already_spent",
       "status": "pass",
-      "seconds": 0.0022
+      "seconds": 0.0045
     },
     {
       "test": "test_review_fixes.PrepareFixTests.test_unrecognised_early_errors_reach_the_viewer_unchanged",
@@ -799,157 +844,157 @@
     {
       "test": "test_review_fixes.QuietPeerTests.test_abandon_during_a_failed_hash_check_ends_the_fetch_at_once",
       "status": "pass",
-      "seconds": 0.0018
+      "seconds": 0.002
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_banned_address_leaves_the_redial_list_and_its_other_session_is_closed",
       "status": "pass",
-      "seconds": 0.0014
+      "seconds": 0.0015
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_choked_peer_serving_an_allowed_fast_piece_keeps_its_requests",
       "status": "pass",
-      "seconds": 0.0015
+      "seconds": 0.0024
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_delivered_block_resets_the_count_of_used_chances",
       "status": "pass",
-      "seconds": 0.0016
+      "seconds": 0.0024
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_fetch_waits_out_the_moment_between_a_drop_and_its_redial",
       "status": "pass",
-      "seconds": 0.8063
+      "seconds": 0.8226
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_quiet_fast_peer_does_not_make_a_slower_one_leave_the_piece_to_it",
       "status": "pass",
-      "seconds": 0.0025
+      "seconds": 0.0023
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_quiet_peer_with_nothing_outstanding_gets_three_more_chances_then_is_closed",
       "status": "pass",
-      "seconds": 0.0014
+      "seconds": 0.0013
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_rejects_from_an_unchoked_peer_still_count_and_a_new_upload_slot_clears_them",
       "status": "pass",
-      "seconds": 0.0016
+      "seconds": 0.0021
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_rejects_that_follow_a_choke_are_routine_and_the_unchoke_restores_the_peer",
       "status": "pass",
-      "seconds": 0.0016
+      "seconds": 0.0018
     },
     {
       "test": "test_review_fixes.QuietPeerTests.test_retry_from_one_peer_is_not_left_to_faster_peers_that_may_not_deliver_it",
       "status": "pass",
-      "seconds": 0.0015
+      "seconds": 0.002
     },
     {
       "test": "test_review_fixes.ReaderFixTests.test_last_plain_reader_closing_gives_the_piece_up_without_starting_it_again",
       "status": "pass",
-      "seconds": 0.1976
+      "seconds": 0.1975
     },
     {
       "test": "test_review_fixes.ReaderFixTests.test_older_connection_that_is_read_again_gets_the_window_back",
       "status": "pass",
-      "seconds": 0.1849
+      "seconds": 0.1878
     },
     {
       "test": "test_review_fixes.ReaderFixTests.test_reader_closed_after_a_seek_does_not_restart_the_piece_it_waited_for",
       "status": "pass",
-      "seconds": 0.2108
+      "seconds": 0.2008
     },
     {
       "test": "test_review_fixes.ReaderFixTests.test_two_plain_readers_of_one_piece_do_not_cancel_each_other",
       "status": "pass",
-      "seconds": 0.0605
+      "seconds": 0.0578
     },
     {
       "test": "test_review_fixes.RealSocketFixTests.test_fast_extension_peer_serves_again_after_choking_in_mid_piece",
       "status": "pass",
-      "seconds": 5.0985
+      "seconds": 5.1243
     },
     {
       "test": "test_review_fixes.RealSocketFixTests.test_flood_of_requests_from_a_peer_gets_a_bounded_number_of_answers",
       "status": "pass",
-      "seconds": 0.5054
+      "seconds": 0.5106
     },
     {
       "test": "test_review_fixes.RealSocketFixTests.test_peer_that_does_not_read_cannot_hold_up_the_scheduler",
       "status": "pass",
-      "seconds": 2.0496
+      "seconds": 2.0414
     },
     {
       "test": "test_review_fixes.ServiceFixTests.test_another_video_after_a_failed_reopen_ends_the_waiting_session",
       "status": "pass",
-      "seconds": 0.004
+      "seconds": 0.0072
     },
     {
       "test": "test_review_fixes.ServiceFixTests.test_reopened_session_measures_its_rate_from_the_reopen_onwards",
       "status": "pass",
-      "seconds": 0.0048
+      "seconds": 0.0076
     },
     {
       "test": "test_subtitles.SubtitleTests.test_actual_subtitle_rows_replace_movies_and_tv_menus",
       "status": "pass",
-      "seconds": 0.0022
+      "seconds": 0.0036
     },
     {
       "test": "test_subtitles.SubtitleTests.test_cache_atomic_writes_remain_valid",
       "status": "pass",
-      "seconds": 0.0685
+      "seconds": 0.0534
     },
     {
       "test": "test_subtitles.SubtitleTests.test_context_applies_only_to_the_exact_playing_url",
       "status": "pass",
-      "seconds": 0.0022
+      "seconds": 0.002
     },
     {
       "test": "test_subtitles.SubtitleTests.test_episode_uses_show_id_and_original_release",
       "status": "pass",
-      "seconds": 0.0016
+      "seconds": 0.0015
     },
     {
       "test": "test_subtitles.SubtitleTests.test_gzip_download_has_decompressed_size_limit",
       "status": "pass",
-      "seconds": 0.0595
+      "seconds": 0.083
     },
     {
       "test": "test_subtitles.SubtitleTests.test_html_error_is_not_a_subtitle",
       "status": "pass",
-      "seconds": 0.0045
+      "seconds": 0.0062
     },
     {
       "test": "test_subtitles.SubtitleTests.test_http_and_redirects_reject_private_addresses",
       "status": "pass",
-      "seconds": 0.0015
+      "seconds": 0.0021
     },
     {
       "test": "test_subtitles.SubtitleTests.test_language_aliases_and_hebrew_priority",
       "status": "pass",
-      "seconds": 0.001
+      "seconds": 0.0014
     },
     {
       "test": "test_subtitles.SubtitleTests.test_legacy_hebrew_cp1255_becomes_utf8",
       "status": "pass",
-      "seconds": 0.0053
+      "seconds": 0.0068
     },
     {
       "test": "test_subtitles.SubtitleTests.test_native_subtitle_actions_do_not_open_movie_directory",
       "status": "pass",
-      "seconds": 0.0011
+      "seconds": 0.0017
     },
     {
       "test": "test_subtitles.SubtitleTests.test_oversized_compressed_subtitle_rejected",
       "status": "pass",
-      "seconds": 0.0384
+      "seconds": 0.071
     },
     {
       "test": "test_subtitles.SubtitleTests.test_utf16_and_utf32_become_utf8",
       "status": "pass",
-      "seconds": 0.0011
+      "seconds": 0.002
     },
     {
       "test": "test_subtitles.SubtitleTests.test_utf8_hebrew_is_not_reversed",
@@ -959,172 +1004,172 @@
     {
       "test": "test_subtitles.SubtitleTests.test_video_hash_uses_already_cached_bytes_without_fetching",
       "status": "pass",
-      "seconds": 0.0024
+      "seconds": 0.0043
     },
     {
       "test": "test_subtitles.SubtitleTests.test_zip_is_read_without_extracting_its_path",
       "status": "pass",
-      "seconds": 0.0014
+      "seconds": 0.0026
     },
     {
       "test": "test_swarm.CacheTests.test_failed_piece_is_remembered_for_diagnostics_until_it_succeeds",
       "status": "pass",
-      "seconds": 0.0056
+      "seconds": 0.0083
     },
     {
       "test": "test_swarm.CacheTests.test_full_cache_never_evicts_read_ahead_before_it_is_read",
       "status": "pass",
-      "seconds": 0.8977
+      "seconds": 0.958
     },
     {
       "test": "test_swarm.CacheTests.test_head_and_tail_stay_cached_while_the_middle_rolls",
       "status": "pass",
-      "seconds": 0.1444
+      "seconds": 0.1694
     },
     {
       "test": "test_swarm.CacheTests.test_heartbeat_read_reports_a_wait_and_then_the_exact_bytes",
       "status": "pass",
-      "seconds": 0.0705
+      "seconds": 0.0899
     },
     {
       "test": "test_swarm.CacheTests.test_parked_reader_does_not_pull_the_window_back",
       "status": "pass",
-      "seconds": 0.1181
+      "seconds": 0.1194
     },
     {
       "test": "test_swarm.CacheTests.test_rate_counts_parallel_downloads_once",
       "status": "pass",
-      "seconds": 1.2142
+      "seconds": 1.2188
     },
     {
       "test": "test_swarm.CacheTests.test_small_cache_does_not_reserve_slots_for_head_and_tail",
       "status": "pass",
-      "seconds": 0.011
+      "seconds": 0.0068
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_awaited_block_of_a_quiet_peer_moves_to_the_front_of_a_full_pipeline",
       "status": "pass",
-      "seconds": 0.0037
+      "seconds": 0.0032
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_block_deep_in_a_healthy_pipeline_is_taken_over_not_duplicated",
       "status": "pass",
-      "seconds": 0.0032
+      "seconds": 0.0016
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_block_held_only_by_quiet_peers_is_requested_again_for_any_piece",
       "status": "pass",
-      "seconds": 0.0024
+      "seconds": 0.0027
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_overdue_urgent_block_is_requested_a_second_time_only_once",
       "status": "pass",
-      "seconds": 0.0028
+      "seconds": 0.0015
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_peer_that_went_quiet_gets_no_new_work_until_it_delivers",
       "status": "pass",
-      "seconds": 0.003
+      "seconds": 0.0021
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_read_ahead_follows_the_reader_after_a_seek",
       "status": "pass",
-      "seconds": 0.0045
+      "seconds": 0.0032
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_slow_peer_leaves_an_urgent_piece_to_faster_peers",
       "status": "pass",
-      "seconds": 0.0033
+      "seconds": 0.0025
     },
     {
       "test": "test_swarm.SchedulerDecisionTests.test_urgent_blocks_replace_read_ahead_at_the_far_end_of_a_full_pipeline",
       "status": "pass",
-      "seconds": 0.0031
+      "seconds": 0.0053
     },
     {
       "test": "test_swarm.SchedulingTests.test_choked_peers_are_replaced_when_candidates_wait",
       "status": "pass",
-      "seconds": 4.0766
+      "seconds": 4.0872
     },
     {
       "test": "test_swarm.SchedulingTests.test_corrupt_block_is_traced_to_its_sender_and_only_it_is_banned",
       "status": "pass",
-      "seconds": 5.0737
+      "seconds": 5.1236
     },
     {
       "test": "test_swarm.SchedulingTests.test_dead_candidates_fail_fast_instead_of_waiting_for_the_timeout",
       "status": "pass",
-      "seconds": 2.1472
+      "seconds": 2.0662
     },
     {
       "test": "test_swarm.SchedulingTests.test_dropped_peer_that_delivered_data_is_dialed_again",
       "status": "pass",
-      "seconds": 4.073
+      "seconds": 4.089
     },
     {
       "test": "test_swarm.SchedulingTests.test_every_unchoked_peer_shares_one_urgent_piece",
       "status": "pass",
-      "seconds": 5.0807
+      "seconds": 5.1112
     },
     {
       "test": "test_swarm.SchedulingTests.test_fast_extension_have_all_and_rejects",
       "status": "pass",
-      "seconds": 1.5263
+      "seconds": 1.5447
     },
     {
       "test": "test_swarm.SchedulingTests.test_idle_connections_outlive_the_old_ten_second_cutoff",
       "status": "pass",
-      "seconds": 12.691
+      "seconds": 12.7632
     },
     {
       "test": "test_swarm.SchedulingTests.test_keepalive_is_sent_on_a_quiet_connection",
       "status": "pass",
-      "seconds": 1.5254
+      "seconds": 1.5362
     },
     {
       "test": "test_swarm.SchedulingTests.test_only_corrupt_source_fails_instead_of_delivering_bad_bytes",
       "status": "pass",
-      "seconds": 1.5402
+      "seconds": 1.5376
     },
     {
       "test": "test_swarm.SchedulingTests.test_peer_without_the_piece_stays_connected",
       "status": "pass",
-      "seconds": 1.5372
+      "seconds": 1.5645
     },
     {
       "test": "test_swarm.SchedulingTests.test_peers_without_any_wanted_piece_are_replaced",
       "status": "pass",
-      "seconds": 4.5659
+      "seconds": 4.6049
     },
     {
       "test": "test_swarm.SchedulingTests.test_stalled_peer_does_not_hold_an_urgent_piece",
       "status": "pass",
-      "seconds": 6.6222
+      "seconds": 6.6439
     },
     {
       "test": "test_swarm.StoreIntegrationTests.test_engine_fills_a_start_buffer_and_knows_the_bitrate",
       "status": "pass",
-      "seconds": 4.6348
+      "seconds": 3.6568
     },
     {
       "test": "test_swarm.StoreIntegrationTests.test_reader_waiting_on_read_ahead_promotes_it",
       "status": "pass",
-      "seconds": 3.0626
+      "seconds": 3.0951
     },
     {
       "test": "test_swarm.StoreIntegrationTests.test_seek_abandons_started_read_ahead_and_refills_at_the_target",
       "status": "pass",
-      "seconds": 6.6215
+      "seconds": 6.7049
     },
     {
       "test": "test_swarm.StoreIntegrationTests.test_urgent_read_overtakes_read_ahead_on_a_single_peer",
       "status": "pass",
-      "seconds": 5.097
+      "seconds": 5.1337
     },
     {
       "test": "test_upgrades.ContainerTests.test_matroska_duration_with_scale_and_a_memoryview",
       "status": "pass",
-      "seconds": 0.0002
+      "seconds": 0.0001
     },
     {
       "test": "test_upgrades.ContainerTests.test_mp4_duration_from_either_end_and_both_header_versions",
@@ -1144,17 +1189,17 @@
     {
       "test": "test_upgrades.DiscoveryTests.test_dht_lookup_starts_from_remembered_nodes_and_falls_back_to_routers",
       "status": "pass",
-      "seconds": 1.6608
+      "seconds": 1.6291
     },
     {
       "test": "test_upgrades.DiscoveryTests.test_magnet_metadata_starts_before_the_slowest_tracker_answers",
       "status": "pass",
-      "seconds": 0.2155
+      "seconds": 0.2059
     },
     {
       "test": "test_upgrades.DiscoveryTests.test_one_dead_tracker_no_longer_delays_the_others",
       "status": "pass",
-      "seconds": 0.0019
+      "seconds": 0.0029
     },
     {
       "test": "test_upgrades.DiscoveryTests.test_public_trackers_follow_the_sources_own_trackers",
@@ -1164,17 +1209,17 @@
     {
       "test": "test_upgrades.DiscoveryTests.test_remembered_dht_nodes_survive_a_restart_and_reject_bad_rows",
       "status": "pass",
-      "seconds": 0.0248
+      "seconds": 0.0318
     },
     {
       "test": "test_upgrades.DiscoveryTests.test_saved_metadata_skips_the_metadata_exchange_and_only_finds_peers",
       "status": "pass",
-      "seconds": 2.5504
+      "seconds": 2.571
     },
     {
       "test": "test_upgrades.DiscoveryTests.test_udp_tracker_is_reached_over_ipv6_when_ipv4_has_no_route",
       "status": "pass",
-      "seconds": 0.5085
+      "seconds": 0.5119
     },
     {
       "test": "test_upgrades.PolicyTests.test_failures_get_a_stable_reason_and_plain_advice",
@@ -1199,77 +1244,77 @@
     {
       "test": "test_upgrades.ResumeRequestTests.test_live_session_is_reused_without_preparing_the_torrent_again",
       "status": "pass",
-      "seconds": 0.2486
+      "seconds": 0.0165
     },
     {
       "test": "test_upgrades.ResumeRequestTests.test_plain_play_never_reuses_a_session_by_accident",
       "status": "pass",
-      "seconds": 0.1242
+      "seconds": 0.0173
     },
     {
       "test": "test_upgrades.ResumeRequestTests.test_resume_is_refused_when_it_cannot_be_right",
       "status": "pass",
-      "seconds": 0.005
+      "seconds": 0.0074
     },
     {
       "test": "test_upgrades.ResumeRequestTests.test_same_source_is_reopened_at_the_same_position_at_most_twice",
       "status": "pass",
-      "seconds": 0.0061
+      "seconds": 0.0075
     },
     {
       "test": "test_upgrades.ServiceEndTests.test_end_far_from_the_credits_reopens_the_live_session_and_seeks_back",
       "status": "pass",
-      "seconds": 0.0063
+      "seconds": 0.0061
     },
     {
       "test": "test_upgrades.ServiceEndTests.test_real_end_user_stop_and_silent_stop_are_never_reopened",
       "status": "pass",
-      "seconds": 0.0142
+      "seconds": 0.0171
     },
     {
       "test": "test_upgrades.ServiceEndTests.test_session_that_never_restarts_is_closed_after_the_grace_period",
       "status": "pass",
-      "seconds": 0.0078
+      "seconds": 0.0103
     },
     {
       "test": "test_upgrades.StreamStallTests.test_listener_taken_away_by_the_system_is_reopened_on_the_same_port",
       "status": "pass",
-      "seconds": 2.0202
+      "seconds": 2.0534
     },
     {
       "test": "test_upgrades.StreamStallTests.test_mime_hint_is_given_only_for_this_engines_own_urls",
       "status": "pass",
-      "seconds": 0.5033
+      "seconds": 0.5098
     },
     {
       "test": "test_upgrades.StreamStallTests.test_source_failure_after_partial_delivery_keeps_every_verified_byte",
       "status": "pass",
-      "seconds": 0.5096
+      "seconds": 0.5163
     },
     {
       "test": "test_upgrades.StreamStallTests.test_stall_drips_the_verified_reserve_and_the_body_stays_exact",
       "status": "pass",
-      "seconds": 1.0163
+      "seconds": 0.514
     },
     {
       "test": "test_web.WebTests.test_add_pause_remove_contract_and_protected_delete",
       "status": "pass",
-      "seconds": 0.5267
+      "seconds": 0.5364
     },
     {
       "test": "test_web.WebTests.test_cross_origin_and_dns_rebinding_rejected",
       "status": "pass",
-      "seconds": 1.0293
+      "seconds": 1.0394
     },
     {
       "test": "test_web.WebTests.test_dashboard_assets_csp_no_secrets_and_auth_required",
       "status": "pass",
-      "seconds": 0.5278
+      "seconds": 0.5874
     },
     {
       "test": "test_web.WebTests.test_token_rotates_on_restart_and_get_cannot_mutate",
       "status": "pass",
-      "seconds": 1.5422
+      "seconds": 1.544
     }
   ]
 }
